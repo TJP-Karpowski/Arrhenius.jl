@@ -29,7 +29,7 @@ from the yaml file, pary of them are from the pre-processed .npz file from
 ReacTorch and Cantera
 test for math enviroment
 """
-function CreateSolution(mech)
+function CreateSolution(mech;sparseCoeffs=false)
     yaml = YAML.load_file(mech)
 
     #### Basics
@@ -117,8 +117,146 @@ function CreateSolution(mech)
         end
     end
     efficiencies_coeffs = sparse(efficiencies_coeffs_full)
-
-    reaction = Reaction(
+    reactions = []
+    fallOff_index = 1
+    Troe_index = 1
+    if sparseCoeffs
+        for (i,mech_reaction) in enumerate(yaml["reactions"])
+            #println("reaction $i: $(mech_reaction["equation"])")
+            if !haskey(mech_reaction, "type") 
+                if occursin("<=>",mech_reaction["equation"])
+                    reac = reversibleArrheniusReaction(
+                        product_stoich_coeffs[:,i],
+                        reactant_stoich_coeffs[:,i],
+                        reactant_orders[:,i],
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        )
+                    push!(reactions,reac)
+                else 
+                    reac = arrheniusReaction(
+                        product_stoich_coeffs[:,i],
+                        reactant_stoich_coeffs[:,i],
+                        reactant_orders[:,i],
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        )
+                    push!(reactions,reac)
+                end
+            elseif mech_reaction["type"]=="three-body"
+                reac = reversibleThreeBodyReaction(
+                    product_stoich_coeffs[:,i],
+                    reactant_stoich_coeffs[:,i],
+                    reactant_orders[:,i],
+                    npz["Arrhenius_coeffs"][i,:],
+                    #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
+                    sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                    sparse(efficiencies_coeffs_full[:, i]),
+                    )
+                push!(reactions,reac)
+            elseif mech_reaction["type"]=="falloff"
+                if !haskey(mech_reaction, "Troe") 
+                    reac = reversibleFalloffReaction(
+                        product_stoich_coeffs[:,i],
+                        reactant_stoich_coeffs[:,i],
+                        reactant_orders[:,i],
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        sparse(efficiencies_coeffs_full[:, i]),
+                        [npz["Arrhenius_A0"][fallOff_index],
+                        npz["Arrhenius_b0"][fallOff_index],
+                        npz["Arrhenius_Ea0"][fallOff_index]]
+                    )    
+                    push!(reactions,reac)
+                else
+                    reac = reversibleTroeReaction(
+                        product_stoich_coeffs[:,i],
+                        reactant_stoich_coeffs[:,i],
+                        reactant_orders[:,i],
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        sparse(efficiencies_coeffs_full[:, i]),
+                        [npz["Arrhenius_A0"][fallOff_index],
+                            npz["Arrhenius_b0"][fallOff_index],
+                            npz["Arrhenius_Ea0"][fallOff_index]],
+                        Troe_[Troe_index,:]
+                        )    
+                    push!(reactions,reac)
+                    Troe_index +=1
+                end
+                fallOff_index += 1
+            end
+        end
+    else
+        for (i,mech_reaction) in enumerate(yaml["reactions"])
+            #println("reaction $i: $(mech_reaction["equation"])")
+            if !haskey(mech_reaction, "type") 
+                if occursin("<=>",mech_reaction["equation"])
+                    reac = reversibleArrheniusReaction(
+                        Array(product_stoich_coeffs[:,i]),
+                        Array(reactant_stoich_coeffs[:,i]),
+                        Array(reactant_orders[:,i]),
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        )
+                    push!(reactions,reac)
+                else 
+                    reac = arrheniusReaction(
+                        Array(product_stoich_coeffs[:,i]),
+                        Array(reactant_stoich_coeffs[:,i]),
+                        Array(reactant_orders[:,i]),
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        )
+                    push!(reactions,reac)
+                end
+            elseif mech_reaction["type"]=="three-body"
+                reac = reversibleThreeBodyReaction(
+                    Array(product_stoich_coeffs[:,i]),
+                    Array(reactant_stoich_coeffs[:,i]),
+                    Array(reactant_orders[:,i]),
+                    npz["Arrhenius_coeffs"][i,:],
+                    #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
+                    sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                    efficiencies_coeffs_full[:, i],
+                    )
+                push!(reactions,reac)
+            elseif mech_reaction["type"]=="falloff"
+                if !haskey(mech_reaction, "Troe") 
+                    reac = reversibleFalloffReaction(
+                        Array(product_stoich_coeffs[:,i]),
+                        Array(reactant_stoich_coeffs[:,i]),
+                        Array(reactant_orders[:,i]),
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        efficiencies_coeffs_full[:, i],
+                        [npz["Arrhenius_A0"][fallOff_index],
+                        npz["Arrhenius_b0"][fallOff_index],
+                        npz["Arrhenius_Ea0"][fallOff_index]]
+                    )    
+                    push!(reactions,reac)
+                else
+                    reac = reversibleTroeReaction(
+                        Array(product_stoich_coeffs[:,i]),
+                        Array(reactant_stoich_coeffs[:,i]),
+                        Array(reactant_orders[:,i]),
+                        npz["Arrhenius_coeffs"][i,:],
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        efficiencies_coeffs_full[:, i],
+                        [npz["Arrhenius_A0"][fallOff_index],
+                            npz["Arrhenius_b0"][fallOff_index],
+                            npz["Arrhenius_Ea0"][fallOff_index]],
+                        Troe_[Troe_index,:]
+                        )    
+                    push!(reactions,reac)
+                    Troe_index +=1
+                end
+                fallOff_index += 1
+            end
+        end
+    end
+    reactions = tuple(reactions...)
+    kinetics = Kinetics(
         product_stoich_coeffs,
         reactant_stoich_coeffs,
         reactant_orders,
@@ -166,7 +304,8 @@ function CreateSolution(mech)
         ele_matrix,
         thermo,
         trans,
-        reaction,
+        reactions, 
+        kinetics
     )
     return gas
 end

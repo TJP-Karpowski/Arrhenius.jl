@@ -48,13 +48,15 @@ function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
         if reaction.is_reversible[i]
             @inbounds for j in reaction.i_product[i]
                 @inbounds _kr[i] *= C[j]^reaction.product_stoich_coeffs[j, i]
+                #@inbounds _kr[i] *= IfElse.ifelse(reaction.is_reversible[i],C[j]^reaction.product_stoich_coeffs[j, i],1)
             end
+            
         end
     end
 
-    if get_qdot
-        return _kf - _kr
-    end
+    #if get_qdot
+    #    return _kf - _kr
+    #end
     return reaction.vk * (_kf - _kr)
 end
 export wdot_func

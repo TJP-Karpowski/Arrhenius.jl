@@ -1,4 +1,4 @@
-struct Reaction
+struct Kinetics
     product_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
     reactant_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
     reactant_orders::SparseMatrixCSC{Float64,Int64}
@@ -19,6 +19,10 @@ end
 
 abstract type Thermo end
 
+abstract type AbstractReaction end
+#abstract type Kinetic end
+
+
 struct Transport
     poly_order::Int64
     species_viscosities_poly::Array{Float64,2}
@@ -26,7 +30,7 @@ struct Transport
     binary_diff_coeffs_poly::Array{Float64,2}
 end
 
-struct Solution
+struct Solution#{AbArray<:AbstractArray} #{T:<Thermo}
     n_species::Int64
     n_reactions::Int64
     MW::Vector{Float64}
@@ -35,5 +39,6 @@ struct Solution
     ele_matrix::Array{Float64,2}
     thermo::Thermo
     trans::Transport
-    reaction::Reaction
+    reactions::Tuple{Vararg{AbstractReaction}}
+    kinetics
 end

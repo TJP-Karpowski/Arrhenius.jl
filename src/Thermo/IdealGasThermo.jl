@@ -14,8 +14,8 @@ struct IdealGasThermo <: Thermo
     nasa_high::Array{Float64,2}
     Trange::Array{Float64,2}
     isTcommon::Bool
-
 end
+
 """
 Constructor for the idealGasThermo:
 
