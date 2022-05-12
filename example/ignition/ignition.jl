@@ -54,10 +54,9 @@ u0 = vcat(Y0, T0)
     @timeit tmr "h" h_RT = cal_h_RT(gas, T, P, X)
     @timeit tmr "S0" S0_R = cal_s0_R(gas, T, P, X)
     #wY = du[1:end-1]
-    @timeit tmr "wdot" calc_omegaY!( @view(du[1:end-1]), gas, T, C, S0_R, h_RT,ρ_mass,tmr) 
+    @timeit tmr "new" calc_omegaY!( @view(du[1:end-1]),gas, T, C, S0_R, h_RT,ρ_mass) 
     du[1:end-1] =du[1:end-1] .* gas.MW ./ ρ_mass
-    #println("difference: ",maximum(wdot_new)-maximum(wdot),"   ",minimum(wdot_new)-minimum(wdot))
-    #wdot_new = wdot_here(gas.kinetics, T, C, S0_R * R, h_RT * R * T)
+    #@timeit tmr "old" wdot_new = wdot_func(gas.kinetics, T, C, S0_R * R, h_RT * R * T)
     #du[1:end-1] = wdot_new / ρ_mass .* gas.MW
     du[end] = -dot(h_RT * R * T ./ gas.MW, du[1:end-1]) / cp_mass
     return nothing
@@ -78,7 +77,7 @@ du0 = zeros(54)
 dudt!(du0, u0, [],0)
 reset_timer!(tmr);
 dudt!(du0, u0, [],0)
-#@btime solve(prob, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
+@btime solve(prob, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
 
 #println("radau5:")
 #@btime sol = solve(prob, radau5(autodiff=false),  reltol = 1e-6, abstol = 1e-9)  seconds = 5

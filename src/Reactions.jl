@@ -53,16 +53,16 @@ struct reversibleTroeReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: r
     Troe::AT1
 end
 
-function ArrheniusLaw(Arrhenius_coeffs::AbstractVector,T::Real) 
-    kf = Arrhenius_coeffs[1] * exp(
+@inline function ArrheniusLaw(Arrhenius_coeffs,T::Real) 
+    return Arrhenius_coeffs[1] * exp(
         Arrhenius_coeffs[2] * log(T) -
         Arrhenius_coeffs[3] * (4184.0 / R / T)
     )
-    return kf
+     
 end
-ArrheniusLaw(reaction::AbstractReaction{<:AbstractVector,<:AbstractVector},T::Real) = ArrheniusLaw(reaction.Arrhenius_coeffs,T) 
+ArrheniusLaw(reaction::AbstractReaction,T::Real) = ArrheniusLaw(reaction.Arrhenius_coeffs,T) 
 
-forwardRate(reaction::AbstractReaction{<:AbstractVector,<:AbstractVector},T::Real,C::AbstractVector) = ArrheniusLaw(reaction,T) 
+forwardRate(reaction::AbstractReaction,T::Real,C::AbstractVector) = ArrheniusLaw(reaction,T) 
 
 function forwardRate(reaction::reversibleThreeBodyReaction,T::Real,C::AbstractVector)
     return  ArrheniusLaw(reaction,T) * dot(reaction.efficiency_coeffs, C)
@@ -104,33 +104,40 @@ end
 function rateOfProgress(reaction::arrheniusReaction, T, C, S0_R, h_RT,tmr) 
     return @timeit tmr "RateOfProgress irreversibe" reaction.vk .* forwardRate(reaction,T,C) * Omega_C_powOrder(C,reaction.reactant_orders)
 end
-@inline function Omega_C_powOrder(C::AbstractVector, order::AbstractVector)
+function Omega_C_powOrder(C::AbstractVector, order::AbstractVector)
     return @inbounds prod(C.^order)
 end
 
-@inline function Omega_C_powOrder(C::AbstractVector{T}, order::AbstractSparseVector{T}) where T<:Real
-    return @inbounds prod(@view(C[order.nzind]).^order.nzval)
+function Omega_C_powOrder(C::AbstractVector{T}, order::AbstractSparseVector{T}) where T<:Real
+    Qj = one(T)
+    for (i,index_dense) in enumerate(order.nzind)
+        @inbounds Qj *= C[index_dense]^order.nzval[i]
+    end
+    return Qj
 end
 
-# function rateOfProgress(reaction::AbstractReaction{AT1,<:AbstractVector},  T, C::AT1, S0_R::AT1, h_RT::AT1,tmr) where AT1<: AbstractVector
-#     @timeit tmr "forwardRate" kf = forwardRate(reaction,T, C) 
-#     @timeit tmr "backwardRate" kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
-#     return @timeit tmr "RateOfProgress" reaction.vk .*(kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
-# end
-
-@inline function rateOfProgress!(omegaY::AbstractVector{TN},reaction::AbstractReaction{<:AbstractVector{TN},<:AbstractVector{TN}},  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN},tmr) where TN<: Real
-    @timeit tmr "forwardRate" kf = forwardRate(reaction,T, C) 
-    @timeit tmr "backwardRate" kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
-    @timeit tmr "Qj" Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
-    @timeit tmr "RateOfProgress!" @inbounds omegaY[reaction.vk.nzind] .= @view(omegaY[reaction.vk.nzind]) + reaction.vk.nzval * Qj
+function rateOfProgress!(omegaY::AbstractVector{TN},reaction::AbstractReaction,  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN}) where TN<: Real
+    for (i, index_dense) in enumerate(reaction.vk.nzind)
+    @inbounds omegaY[index_dense] += reaction.vk.nzval[i] * forwardRate(reaction,T, C)  * Omega_C_powOrder(C,reaction.reactant_orders) 
+    end
     return nothing
 end
 
-function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C, S0_R, h_RT,rho,tmr) 
+function rateOfProgress!(omegaY::AbstractVector{TN},reaction::reversibleReaction,  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN}) where TN<: Real
+    kf = forwardRate(reaction,T, C) 
+    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+    Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
+    for (i, index_dense) in enumerate(reaction.vk.nzind)
+        @inbounds omegaY[index_dense] += reaction.vk.nzval[i] * Qj
+    end
+    return nothing
+end
+
+function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C, S0_R, h_RT,rho) 
     omegaY .= 0.0
     #RoP = sparse(similar(C))
-    for reaction in gas.reactions
-        @timeit tmr "omegaY+"  rateOfProgress!(omegaY, reaction, T, C, S0_R, h_RT,tmr)
+    for i in 1:gas.n_reactions
+        @inbounds rateOfProgress!(omegaY, gas.reactions[i], T, C, S0_R, h_RT)
           #omegaY[RoP.nzind] += RoP.nzval 
     end
     #omegaY .= omegaY 

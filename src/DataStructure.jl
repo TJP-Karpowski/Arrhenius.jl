@@ -30,7 +30,7 @@ struct Transport
     binary_diff_coeffs_poly::Array{Float64,2}
 end
 
-struct Solution#{AbArray<:AbstractArray} #{T:<Thermo}
+struct Solution
     n_species::Int64
     n_reactions::Int64
     MW::Vector{Float64}
