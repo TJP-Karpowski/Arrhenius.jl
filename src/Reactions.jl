@@ -1,75 +1,80 @@
-abstract type reversibleReaction <: AbstractReaction end
+abstract type reversibleReaction{AT1,AT2} <: AbstractReaction{AT1,AT2} end
 
-struct arrheniusReaction{AbArray<:AbstractArray,AbArray2<:AbstractArray} <: AbstractReaction 
-    product_stoich_coeffs::AbArray2
-    reactant_stoich_coeffs::AbArray2
-    reactant_orders::AbArray2
-    Arrhenius_coeffs::AbArray
-    vk_sum
+struct arrheniusReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: AbstractReaction{AT1,AT2} 
+    product_stoich_coeffs::AT2
+    reactant_stoich_coeffs::AT2
+    reactant_orders::AT2
+    Arrhenius_coeffs::AT1
+    vk_sum::Float64
+    vk::AT2
 
 end
 
-struct reversibleArrheniusReaction{AbArray<:AbstractArray,AbArray2<:AbstractArray} <: reversibleReaction 
-    product_stoich_coeffs::AbArray2
-    reactant_stoich_coeffs::AbArray2
-    reactant_orders::AbArray2
-    Arrhenius_coeffs::AbArray
-    vk_sum
+struct reversibleArrheniusReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: reversibleReaction{AT1,AT2} 
+    product_stoich_coeffs::AT2
+    reactant_stoich_coeffs::AT2
+    reactant_orders::AT2
+    Arrhenius_coeffs::AT1
+    vk_sum::Float64
+    vk::AT2
 end
 
-struct reversibleThreeBodyReaction{AbArray<:AbstractArray,AbArray2<:AbstractArray} <: reversibleReaction 
-    product_stoich_coeffs::AbArray2
-    reactant_stoich_coeffs::AbArray2
-    reactant_orders::AbArray2
-    Arrhenius_coeffs::AbArray
-    vk_sum
-    efficiency_coeffs::AbArray2
+struct reversibleThreeBodyReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: reversibleReaction{AT1,AT2} 
+    product_stoich_coeffs::AT2
+    reactant_stoich_coeffs::AT2
+    reactant_orders::AT2
+    Arrhenius_coeffs::AT1
+    vk_sum::Float64
+    vk::AT2
+    efficiency_coeffs::AT2
     
 end
 
-struct reversibleFalloffReaction{AbArray<:AbstractArray,AbArray2<:AbstractArray} <: reversibleReaction 
-    product_stoich_coeffs::AbArray2
-    reactant_stoich_coeffs::AbArray2
-    reactant_orders::AbArray2
-    Arrhenius_coeffs::AbArray
-    vk_sum
-    efficiency_coeffs::AbArray2
-    Arrhenius_coeffs_falloff::AbArray
+struct reversibleFalloffReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: reversibleReaction{AT1,AT2} 
+    product_stoich_coeffs::AT2
+    reactant_stoich_coeffs::AT2
+    reactant_orders::AT2
+    Arrhenius_coeffs::AT1
+    vk_sum::Float64
+    vk::AT2
+    efficiency_coeffs::AT2
+    Arrhenius_coeffs_falloff::AT1
 end
 
-struct reversibleTroeReaction{AbArray<:AbstractArray,AbArray2<:AbstractArray} <: reversibleReaction 
-    product_stoich_coeffs::AbArray2
-    reactant_stoich_coeffs::AbArray2
-    reactant_orders::AbArray2
-    Arrhenius_coeffs::AbArray
-    vk_sum
-    efficiency_coeffs::AbArray2
-    Arrhenius_coeffs_falloff::AbArray
-    Troe::AbArray
+struct reversibleTroeReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: reversibleReaction{AT1,AT2} 
+    product_stoich_coeffs::AT2
+    reactant_stoich_coeffs::AT2
+    reactant_orders::AT2
+    Arrhenius_coeffs::AT1
+    vk_sum::Float64
+    vk::AT2
+    efficiency_coeffs::AT2
+    Arrhenius_coeffs_falloff::AT1
+    Troe::AT1
 end
 
-function ArrheniusLaw(Arrhenius_coeffs::AbstractArray,T::Real)
+function ArrheniusLaw(Arrhenius_coeffs::AbstractVector,T::Real) 
     kf = Arrhenius_coeffs[1] * exp(
         Arrhenius_coeffs[2] * log(T) -
         Arrhenius_coeffs[3] * (4184.0 / R / T)
     )
     return kf
 end
-ArrheniusLaw(reaction::AbstractReaction,T::Real) = ArrheniusLaw(reaction.Arrhenius_coeffs,T)
+ArrheniusLaw(reaction::AbstractReaction{<:AbstractVector,<:AbstractVector},T::Real) = ArrheniusLaw(reaction.Arrhenius_coeffs,T) 
 
-forwardRate(reaction::AbstractReaction,T::Real,C::AbstractArray) = ArrheniusLaw(reaction,T)
+forwardRate(reaction::AbstractReaction{<:AbstractVector,<:AbstractVector},T::Real,C::AbstractVector) = ArrheniusLaw(reaction,T) 
 
-function forwardRate(reaction::reversibleThreeBodyReaction,T::Real,C::AbstractArray)
+function forwardRate(reaction::reversibleThreeBodyReaction,T::Real,C::AbstractVector)
     return  ArrheniusLaw(reaction,T) * dot(reaction.efficiency_coeffs, C)
 end
 
-function forwardRate(reaction::reversibleFalloffReaction, T::Real, C::AbstractArray)
+function forwardRate(reaction::reversibleFalloffReaction, T::Real, C::AbstractVector)
         kf = ArrheniusLaw(reaction,T)
         Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot(reaction.efficiency_coeffs, C) / kf
         kf *= (Pr / (1 + Pr))
         return kf
 end
-function forwardRate(reaction::reversibleTroeReaction, T::Real, C::AbstractArray)
+function forwardRate(reaction::reversibleTroeReaction{AT1,<:AbstractVector}, T::Real, C::AbstractVector) where AT1 <: AbstractVector
     kf = ArrheniusLaw(reaction,T)
     Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot(reaction.efficiency_coeffs, C) / kf
     kf *= (Pr / (1 + Pr))
@@ -86,56 +91,61 @@ function forwardRate(reaction::reversibleTroeReaction, T::Real, C::AbstractArray
     return kf
 end
 
-function backwardRate(reaction::reversibleReaction, T,kf, S0_R, h_RT) 
-    ΔS_R = dot((reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs), S0_R)
-    ΔH_RT = dot((reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs), h_RT)
+function backwardRate(reaction::reversibleReaction{AT1,<:AbstractVector}, T,kf, S0_R::AT1, h_RT::AT1) where AT1 <: AbstractVector
+    ΔS_R = dot(reaction.vk, S0_R)
+    ΔH_RT = dot(reaction.vk, h_RT)
     return kf / exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * reaction.vk_sum) 
 end
 
-function backwardRate(reaction::arrheniusReaction, T,kf, S0_R, h_RT) 
+function backwardRate(reaction::arrheniusReaction{AT1,<:AbstractVector}, T,kf, S0_R::AT1, h_RT::AT1) where AT1 <: AbstractVector
     return return T * 0
 end
 
-# function rateOfProgress(reaction::arrheniusReaction, T, C, S0_R, h_RT) 
-#     Q = forwardRate(reaction,T,C)
-#     for (i, order)  in enumerate(reaction.reactant_orders)#zip(findnz(reaction.reactant_orders)...)
-#         Q *= C[i]^order
-#     end
-#     return Q
+function rateOfProgress(reaction::arrheniusReaction, T, C, S0_R, h_RT,tmr) 
+    return @timeit tmr "RateOfProgress irreversibe" reaction.vk .* forwardRate(reaction,T,C) * Omega_C_powOrder(C,reaction.reactant_orders)
+end
+@inline function Omega_C_powOrder(C::AbstractVector, order::AbstractVector)
+    return @inbounds prod(C.^order)
+end
+
+@inline function Omega_C_powOrder(C::AbstractVector{T}, order::AbstractSparseVector{T}) where T<:Real
+    return @inbounds prod(@view(C[order.nzind]).^order.nzval)
+end
+
+# function rateOfProgress(reaction::AbstractReaction{AT1,<:AbstractVector},  T, C::AT1, S0_R::AT1, h_RT::AT1,tmr) where AT1<: AbstractVector
+#     @timeit tmr "forwardRate" kf = forwardRate(reaction,T, C) 
+#     @timeit tmr "backwardRate" kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+#     return @timeit tmr "RateOfProgress" reaction.vk .*(kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
 # end
-function Omega_C_powOrder(C::AbstractArray, order::AbstractArray)
-    return prod(C.^order)
+
+@inline function rateOfProgress!(omegaY::AbstractVector{TN},reaction::AbstractReaction{<:AbstractVector{TN},<:AbstractVector{TN}},  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN},tmr) where TN<: Real
+    @timeit tmr "forwardRate" kf = forwardRate(reaction,T, C) 
+    @timeit tmr "backwardRate" kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+    @timeit tmr "Qj" Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
+    @timeit tmr "RateOfProgress!" @inbounds omegaY[reaction.vk.nzind] .= @view(omegaY[reaction.vk.nzind]) + reaction.vk.nzval * Qj
+    return nothing
 end
 
-function Omega_C_powOrder(C::AbstractArray, order::AbstractSparseVector)
-    indexes, values = findnz(order)
-    return prod(C[indexes].^values)
-end
-
-function rateOfProgress(reaction::AbstractReaction,  T, C, S0_R, h_RT) 
-    kf = forwardRate(reaction,T, C) 
-    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
-    return kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs)
-end
-
-function calc_omegaY!(omegaY::AbstractArray,gas::Solution, T, C, S0_R, h_RT,rho) 
-    omegaY .= 0
+function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C, S0_R, h_RT,rho,tmr) 
+    omegaY .= 0.0
+    #RoP = sparse(similar(C))
     for reaction in gas.reactions
-        omegaY += (reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs) .* rateOfProgress(reaction, T, C, S0_R, h_RT) 
+        @timeit tmr "omegaY+"  rateOfProgress!(omegaY, reaction, T, C, S0_R, h_RT,tmr)
+          #omegaY[RoP.nzind] += RoP.nzval 
     end
-    omegaY .= omegaY #.* gas.MW ./ rho
+    #omegaY .= omegaY 
     
     return nothing
 end
 
-function calc_omegaY(gas::Solution, T, C, S0_R, h_RT,rho) 
-    omegaY = similar(C) .* 0
-    for reaction in gas.reactions
-        omegaY .= omegaY + ((reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs) .* rateOfProgress(reaction, T, C, S0_R, h_RT)) 
-    end
-    #omegaY .= omegaY #.* gas.MW ./ rho
+# function calc_omegaY(gas::Solution, T, C, S0_R, h_RT,rho) 
+#     omegaY = similar(C) .* 0
+#     for i in gas.n_reactions
+#        omegaY .= omegaY + (gas.reactions[i].vk .* rateOfProgress(gas.reactions[i], T, C, S0_R, h_RT)) 
+#     end
+#     omegaY .= omegaY #.* gas.MW ./ rho
     
-    return omegaY
-end
+#     return omegaY
+# end
 
 export calc_omegaY!, calc_omegaY

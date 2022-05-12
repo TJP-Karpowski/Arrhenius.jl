@@ -3,7 +3,9 @@ module Arrhenius
     using NPZ
     using LinearAlgebra
     using SparseArrays
-
+    using TimerOutputs
+    using LoopVectorization 
+    
     include("Constants.jl")
     include("DataStructure.jl")
     include("Reactions.jl")

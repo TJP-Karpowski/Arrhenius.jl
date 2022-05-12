@@ -130,7 +130,8 @@ function CreateSolution(mech;sparseCoeffs=false)
                         reactant_stoich_coeffs[:,i],
                         reactant_orders[:,i],
                         npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]
                         )
                     push!(reactions,reac)
                 else 
@@ -139,7 +140,8 @@ function CreateSolution(mech;sparseCoeffs=false)
                         reactant_stoich_coeffs[:,i],
                         reactant_orders[:,i],
                         npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]
                         )
                     push!(reactions,reac)
                 end
@@ -151,6 +153,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                     npz["Arrhenius_coeffs"][i,:],
                     #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
                     sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                    product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
                     sparse(efficiencies_coeffs_full[:, i]),
                     )
                 push!(reactions,reac)
@@ -162,6 +165,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                         reactant_orders[:,i],
                         npz["Arrhenius_coeffs"][i,:],
                         sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
                         sparse(efficiencies_coeffs_full[:, i]),
                         [npz["Arrhenius_A0"][fallOff_index],
                         npz["Arrhenius_b0"][fallOff_index],
@@ -175,6 +179,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                         reactant_orders[:,i],
                         npz["Arrhenius_coeffs"][i,:],
                         sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
                         sparse(efficiencies_coeffs_full[:, i]),
                         [npz["Arrhenius_A0"][fallOff_index],
                             npz["Arrhenius_b0"][fallOff_index],
@@ -197,7 +202,8 @@ function CreateSolution(mech;sparseCoeffs=false)
                         Array(reactant_stoich_coeffs[:,i]),
                         Array(reactant_orders[:,i]),
                         npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
                         )
                     push!(reactions,reac)
                 else 
@@ -206,7 +212,8 @@ function CreateSolution(mech;sparseCoeffs=false)
                         Array(reactant_stoich_coeffs[:,i]),
                         Array(reactant_orders[:,i]),
                         npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i])
+                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
                         )
                     push!(reactions,reac)
                 end
@@ -218,6 +225,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                     npz["Arrhenius_coeffs"][i,:],
                     #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
                     sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                    Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
                     efficiencies_coeffs_full[:, i],
                     )
                 push!(reactions,reac)
@@ -229,6 +237,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                         Array(reactant_orders[:,i]),
                         npz["Arrhenius_coeffs"][i,:],
                         sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
                         efficiencies_coeffs_full[:, i],
                         [npz["Arrhenius_A0"][fallOff_index],
                         npz["Arrhenius_b0"][fallOff_index],
@@ -242,6 +251,7 @@ function CreateSolution(mech;sparseCoeffs=false)
                         Array(reactant_orders[:,i]),
                         npz["Arrhenius_coeffs"][i,:],
                         sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
+                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
                         efficiencies_coeffs_full[:, i],
                         [npz["Arrhenius_A0"][fallOff_index],
                             npz["Arrhenius_b0"][fallOff_index],

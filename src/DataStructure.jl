@@ -19,7 +19,7 @@ end
 
 abstract type Thermo end
 
-abstract type AbstractReaction end
+abstract type AbstractReaction{AT1<:AbstractVector,AT2<:AbstractVector} end
 #abstract type Kinetic end
 
 
@@ -39,6 +39,6 @@ struct Solution#{AbArray<:AbstractArray} #{T:<Thermo}
     ele_matrix::Array{Float64,2}
     thermo::Thermo
     trans::Transport
-    reactions::Tuple{Vararg{AbstractReaction}}
+    reactions::Tuple{Vararg{AbstractReaction{<:AbstractVector{<:Real},<:AbstractVector{<:Real}}}}
     kinetics
 end
