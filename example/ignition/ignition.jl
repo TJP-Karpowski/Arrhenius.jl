@@ -16,9 +16,9 @@ using Arrhenius
 
 using TimerOutputs
 const tmr = TimerOutput();
-#@register_symbolic Arrhenius.cal_cpmass_mean(gas::Arrhenius.Solution, T::Num, p::Float64, X::Vector{Num})
-#@register_symbolic cal_h(gas::Arrhenius.Solution, T::Any, p::Any, X::Any)
-#@register_symbolic Arrhenius.cal_s0(gas::Arrhenius.Solution, T::Real, p::Any, X::Any) 
+
+#@register Arrhenius.selectPoly(thermo, T,range)
+
 #@register_symbolic wdot_here(reaction::Any, T::Any, C::Any, S0::Any, h_mole::Any)
 
 #cd("./example/ignition")
@@ -50,9 +50,9 @@ u0 = vcat(Y0, T0)
     ρ_mass = P / R / T * mean_MW
     X = Y2X(gas, Y, mean_MW)
     C = Y2C(gas, Y, ρ_mass)
-    @timeit tmr "cp" cp_mass =  cal_cpmass_mean(gas,T,P,X)#IfElse.ifelse(T <= 1000.0,@view(gas.thermo.nasa_low[:, 1:5])*[1.0, T, T^2, T^3, T^4] ,@view(gas.thermo.nasa_high[:, 1:5]) *[1.0, T, T^2, T^3, T^4])#cal_cpmass_mean(gas,T,P,X)#get_cp(gas, T, X, mean_MW)
-    @timeit tmr "h" h_RT = cal_h_RT(gas, T, P, X)
-    @timeit tmr "S0" S0_R = cal_s0_R(gas, T, P, X)
+    @timeit tmr "cp" cp_mass =  Arrhenius.cal_cpmass_mean(gas,T,P,X)#IfElse.ifelse(T <= 1000.0,@view(gas.thermo.nasa_low[:, 1:5])*[1.0, T, T^2, T^3, T^4] ,@view(gas.thermo.nasa_high[:, 1:5]) *[1.0, T, T^2, T^3, T^4])#cal_cpmass_mean(gas,T,P,X)#get_cp(gas, T, X, mean_MW)
+    @timeit tmr "h" h_RT = Arrhenius.cal_h_RT(gas, T, P, X)
+    @timeit tmr "S0" S0_R = Arrhenius.cal_s0_R(gas, T, P, X)
     #wY = du[1:end-1]
     @timeit tmr "new" calc_omegaY!( @view(du[1:end-1]),gas, T, C, S0_R, h_RT,ρ_mass) 
     du[1:end-1] =du[1:end-1] .* gas.MW ./ ρ_mass
@@ -70,14 +70,16 @@ dudt!(du, u, p, t)=dudt!(du, u, p, t, gas)
 tspan = [0.0, 0.1];
 prob = ODEProblem(dudt!, u0, tspan);
 #sys = modelingtoolkitize(prob)
-
-println("CVODE_BDF:")
+prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
 u0 = vcat(Y0, T0)
 du0 = zeros(54)
 dudt!(du0, u0, [],0)
 reset_timer!(tmr);
 dudt!(du0, u0, [],0)
+println("CVODE_BDF:")
 @btime solve(prob, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
+println("Time jacobian:")
+@btime solve(prob_jac, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
 
 #println("radau5:")
 #@btime sol = solve(prob, radau5(autodiff=false),  reltol = 1e-6, abstol = 1e-9)  seconds = 5

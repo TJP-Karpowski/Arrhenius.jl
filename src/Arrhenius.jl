@@ -5,6 +5,7 @@ module Arrhenius
     using SparseArrays
     using TimerOutputs
     using LoopVectorization 
+    using IfElse
     
     include("Constants.jl")
     include("DataStructure.jl")

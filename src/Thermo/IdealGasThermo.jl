@@ -47,6 +47,11 @@ function IdealGasThermo(yaml::AbstractDict)
     isTcommon = (maximum(Trange[:, 2]) - minimum(Trange[:, 2])) < 0.01
     return  IdealGasThermo(nasa_low, nasa_high, Trange, isTcommon)
 end
+
+function selectPoly(thermo::IdealGasThermo, T::Real,range)
+    return @inbounds @view(thermo.nasa_high[:,range]) #(T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
+    #return IfElse.ifelse(T<=1000.0,thermo.nasa_low[:,1:6],thermo.nasa_high[:,1:6])
+end
 """
     cal_h_RT(gas, T, p, X)
 
@@ -54,16 +59,13 @@ calculates the dimensionless mole based enthalpy (h) for each species
 """
 function cal_h_RT(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
-    if T <= 1000.0
-        h_mole = @view(thermo.nasa_low[:, 1:6]) * H_T 
-    else
-        h_mole = @view(thermo.nasa_high[:, 1:6]) * H_T 
-    end
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        h_mole[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
-    end
+    poly = selectPoly(thermo,T,1:6)
+    h_mole = poly * H_T 
+    #if !thermo.isTcommon
+    #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+    #    h_mole[ind_correction] .=
+    #        @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
+    #end
     # H_mole = dot(h_mole, X)
     return h_mole
 end
@@ -75,17 +77,14 @@ calculates the dimensionless mole based reference state entropy (s0) for each sp
 """
 function cal_s0_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
-    if T <= 1000.0
-        S0 = @view(thermo.nasa_low[:, [1, 2, 3, 4, 5, 7]]) * S_T 
-    else
-        S0 = @view(thermo.nasa_high[:, [1, 2, 3, 4, 5, 7]]) * S_T 
-    end
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        S0[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
-            S_T 
-    end
+    poly = selectPoly(thermo,T,[1, 2, 3, 4, 5, 7])
+    S0 = poly * S_T 
+    # if !thermo.isTcommon
+    #     ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+    #     S0[ind_correction] .=
+    #         @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
+    #         S_T 
+    # end
     return S0 
 end
 export cal_s0_R
@@ -134,17 +133,14 @@ at constant pressure (cp) for each species
 """
 function cal_cp_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     cp_T = [1.0, T, T^2, T^3, T^4]
-    if T <= 1000.0
-        cp = @view(thermo.nasa_low[:, 1:5]) * cp_T
-    else
-        cp = @view(thermo.nasa_high[:, 1:5]) * cp_T
-    end
+    poly = selectPoly(thermo,T,1:5)
+    cp = poly * cp_T
     # TODO: not sure if inplace operation will be an issue for AD
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        cp[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
-    end
+    #if !thermo.isTcommon
+    #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+    #    cp[ind_correction] .=
+    #        @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
+    #end
     return cp
 end
 

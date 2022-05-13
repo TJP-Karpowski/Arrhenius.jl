@@ -91,7 +91,7 @@ function forwardRate(reaction::reversibleTroeReaction{AT1,<:AbstractVector}, T::
     return kf
 end
 
-function backwardRate(reaction::reversibleReaction{AT1,<:AbstractVector}, T,kf, S0_R::AT1, h_RT::AT1) where AT1 <: AbstractVector
+function backwardRate(reaction::reversibleReaction, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
     ΔS_R = dot(reaction.vk, S0_R)
     ΔH_RT = dot(reaction.vk, h_RT)
     return kf / exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * reaction.vk_sum) 
@@ -108,22 +108,22 @@ function Omega_C_powOrder(C::AbstractVector, order::AbstractVector)
     return @inbounds prod(C.^order)
 end
 
-function Omega_C_powOrder(C::AbstractVector{T}, order::AbstractSparseVector{T}) where T<:Real
-    Qj = one(T)
+function Omega_C_powOrder(C::AbstractVector, order::AbstractSparseVector)
+    @inbounds Qj = one(C[1])
     for (i,index_dense) in enumerate(order.nzind)
         @inbounds Qj *= C[index_dense]^order.nzval[i]
     end
     return Qj
 end
 
-function rateOfProgress!(omegaY::AbstractVector{TN},reaction::AbstractReaction,  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN}) where TN<: Real
+function rateOfProgress!(omegaY::AbstractVector,reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector) 
     for (i, index_dense) in enumerate(reaction.vk.nzind)
     @inbounds omegaY[index_dense] += reaction.vk.nzval[i] * forwardRate(reaction,T, C)  * Omega_C_powOrder(C,reaction.reactant_orders) 
     end
     return nothing
 end
 
-function rateOfProgress!(omegaY::AbstractVector{TN},reaction::reversibleReaction,  T::Real, C::AbstractVector{TN}, S0_R::AbstractVector{TN}, h_RT::AbstractVector{TN}) where TN<: Real
+function rateOfProgress!(omegaY::AbstractVector,reaction::reversibleReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector) 
     kf = forwardRate(reaction,T, C) 
     kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
     Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
