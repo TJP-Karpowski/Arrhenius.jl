@@ -320,4 +320,20 @@ function CreateSolution(mech;sparseCoeffs=false)
     return gas
 end
 
+function CreateSolution(gas::Solution,reactions::Tuple{Vararg{AbstractReaction{<:AbstractVector{<:Real},<:AbstractVector{<:Real}}}})
+    gas_ = deepcopy(gas)
+    return Solution(
+        gas_.n_species,
+        length(reactions),
+        gas_.MW,
+        gas_.species_names,
+        gas_.elements,
+        gas_.ele_matrix,
+        gas_.thermo,
+        gas_.trans,
+        reactions, 
+        gas_.kinetics
+    )
+end
+
 export CreateSolution

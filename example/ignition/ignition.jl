@@ -10,7 +10,7 @@ using Profile
 using BenchmarkTools
 using ModelingToolkit
 using IfElse
-using PProf
+#using PProf
 using Revise
 using Arrhenius
 
@@ -54,7 +54,7 @@ u0 = vcat(Y0, T0)
     @timeit tmr "h" h_RT = Arrhenius.cal_h_RT(gas, T, P, X)
     @timeit tmr "S0" S0_R = Arrhenius.cal_s0_R(gas, T, P, X)
     #wY = du[1:end-1]
-    @timeit tmr "new" calc_omegaY!( @view(du[1:end-1]),gas, T, C, S0_R, h_RT,ρ_mass) 
+    calc_omegaY!( @view(du[1:end-1]),gas, T, C, S0_R, h_RT,ρ_mass) 
     du[1:end-1] =du[1:end-1] .* gas.MW ./ ρ_mass
     #@timeit tmr "old" wdot_new = wdot_func(gas.kinetics, T, C, S0_R * R, h_RT * R * T)
     #du[1:end-1] = wdot_new / ρ_mass .* gas.MW
@@ -69,8 +69,8 @@ dudt!(du, u, p, t)=dudt!(du, u, p, t, gas)
 
 tspan = [0.0, 0.1];
 prob = ODEProblem(dudt!, u0, tspan);
-#sys = modelingtoolkitize(prob)
-prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
+@timeit tmr "building the sys" sys = modelingtoolkitize(prob)
+@timeit tmr "building the problem" prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
 u0 = vcat(Y0, T0)
 du0 = zeros(54)
 dudt!(du0, u0, [],0)

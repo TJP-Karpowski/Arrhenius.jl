@@ -49,7 +49,8 @@ function IdealGasThermo(yaml::AbstractDict)
 end
 
 function selectPoly(thermo::IdealGasThermo, T::Real,range)
-    return @inbounds @view(thermo.nasa_high[:,range]) #(T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
+    return (T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
+    #return @inbounds @view(thermo.nasa_high[:,range]) #(T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
     #return IfElse.ifelse(T<=1000.0,thermo.nasa_low[:,1:6],thermo.nasa_high[:,1:6])
 end
 """
@@ -61,12 +62,12 @@ function cal_h_RT(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::Abs
     H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
     poly = selectPoly(thermo,T,1:6)
     h_mole = poly * H_T 
-    #if !thermo.isTcommon
-    #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #    h_mole[ind_correction] .=
-    #        @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
-    #end
-    # H_mole = dot(h_mole, X)
+    if !thermo.isTcommon
+       ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+       h_mole[ind_correction] .=
+           @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
+    end
+    H_mole = dot(h_mole, X)
     return h_mole
 end
 
@@ -79,12 +80,12 @@ function cal_s0_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::Abs
     S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
     poly = selectPoly(thermo,T,[1, 2, 3, 4, 5, 7])
     S0 = poly * S_T 
-    # if !thermo.isTcommon
-    #     ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #     S0[ind_correction] .=
-    #         @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
-    #         S_T 
-    # end
+    if !thermo.isTcommon
+        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+        S0[ind_correction] .=
+            @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
+            S_T 
+    end
     return S0 
 end
 export cal_s0_R
@@ -135,12 +136,12 @@ function cal_cp_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::Abs
     cp_T = [1.0, T, T^2, T^3, T^4]
     poly = selectPoly(thermo,T,1:5)
     cp = poly * cp_T
-    # TODO: not sure if inplace operation will be an issue for AD
-    #if !thermo.isTcommon
-    #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #    cp[ind_correction] .=
-    #        @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
-    #end
+    #TODO: not sure if inplace operation will be an issue for AD
+    if !thermo.isTcommon
+       ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
+       cp[ind_correction] .=
+           @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
+    end
     return cp
 end
 
