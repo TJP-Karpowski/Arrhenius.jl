@@ -3,6 +3,7 @@ module Arrhenius
     using NPZ
     using LinearAlgebra
     using SparseArrays
+    #using Symbolics
     #using TimerOutputs
     #using LoopVectorization 
     #using IfElse
@@ -16,4 +17,5 @@ module Arrhenius
     
     include("Kinetics.jl")
     include("Transport.jl")
+    include("ODE_functions.jl")
 end

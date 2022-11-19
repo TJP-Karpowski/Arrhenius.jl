@@ -94,24 +94,27 @@ end
 function backwardRate(reaction::reversibleReaction, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
     ΔS_R = dot(reaction.vk, S0_R)
     ΔH_RT = dot(reaction.vk, h_RT)
-    return kf / exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * sum(reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs))#reaction.vk_sum) 
+    denum =  exp(ΔS_R - ΔH_RT) * (one_atm / R / T)^reaction.vk_sum
+    return kf / denum
 end
 
 function backwardRate(vk::AbstractVector, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
     ΔS_R = dot(vk, S0_R)
     ΔH_RT = dot(vk, h_RT)
-    return kf / exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * sum(vk))#reaction.vk_sum) 
+    recip_denum = 1. /( (one_atm / R / T)^sum(vk) * exp(ΔS_R - ΔH_RT ))
+    
+    return kf * recip_denum  #reaction.vk_sum) 
 end
 
 function backwardRate(reaction::arrheniusReaction{AT1,<:AbstractVector}, T,kf, S0_R::AT1, h_RT::AT1) where AT1 <: AbstractVector
-    return return T * 0
+    return  T * 0
 end
 
 #function rateOfProgress(reaction::arrheniusReaction, T, C, S0_R, h_RT,tmr) 
 #    return @timeit tmr "RateOfProgress irreversibe" reaction.vk .* forwardRate(reaction,T,C) * Omega_C_powOrder(C,reaction.reactant_orders)
 #end
 function Omega_C_powOrder(C::AbstractVector, order::AbstractVector)
-    return @inbounds prod(C.^order)
+    return  prod(C.^order)
 end
 
 function Omega_C_powOrder(C::AbstractVector, order::AbstractSparseVector)
@@ -149,20 +152,36 @@ function rateOfProgress!(omegaY::AbstractVector,reaction::AbstractReaction{AT1,A
     return nothing
 end
 
-function rateOfProgress!(omegaY::AbstractVector,pReaction::AbstractVector ,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector) 
-    n_species = (length(pReaction)-3)/2 |> Int64
-    product_stoich_coeffs = pReaction[1:n_species]
-    reactant_stoich_coeffs = pReaction[n_species+1:n_species*2]
-    reactant_orders = pReaction[n_species+1:n_species*2]
-    Arrhenius_coeffs = pReaction[n_species*2+1:n_species*2+3]
-    Arrhenius_coeffs[1] = exp(Arrhenius_coeffs[1])
+function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector) 
+    #product_stoich_coeffs = pReaction[1:length(C)]
+    #rectant_stoich_coeffs = pReaction[length(C)+1:length(C)*2]
+    Arrhenius_coeffs = copy(pReaction)#[length(C)*2+1:end])
+    Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
+    Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
+    #vk = product_stoich_coeffs - rectant_stoich_coeffs
     kf = ArrheniusLaw(Arrhenius_coeffs,T)   
-    vk = (product_stoich_coeffs - reactant_stoich_coeffs)
-    kr = backwardRate(vk,T, kf, S0_R, h_RT) 
-    Qj = (kf * Omega_C_powOrder(C,reactant_orders) - kr * Omega_C_powOrder(C,product_stoich_coeffs))
-    vk = product_stoich_coeffs - reactant_stoich_coeffs
-    index_dense = vk .!= 0 
-    omegaY[index_dense] += vk[index_dense] * Qj
+    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+    #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
+    Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
+    index_dense = reaction.vk .!= 0 
+    omegaY[index_dense] += reaction.vk[index_dense] * Qj
+    #@. omegaY += vk * Qj
+    return nothing
+end
+
+function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector,NNmodel,Y::AbstractVector) 
+    pNN = @view(pReaction[1:end-3])
+    Arrhenius_coeffs = copy(pReaction[end-2:end])#[length(C)*2+1:end])
+    Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
+    Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
+    #vk = product_stoich_coeffs - rectant_stoich_coeffs
+    kf = ArrheniusLaw(Arrhenius_coeffs,T) * NNmodel(Y,pNN)[1]   
+    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+    #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
+    Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
+    index_dense = reaction.vk .!= 0 
+    omegaY[index_dense] += reaction.vk[index_dense] * Qj
+    #@. omegaY += vk * Qj
     return nothing
 end
 
@@ -180,12 +199,31 @@ end
 
 function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C, S0_R, h_RT,rho,p) 
     omegaY .= 0.0
-    #RoP = sparse(similar(C))
-    pR_length = gas.n_species * 2 + 3 #length(p)/gas.n_reactions 
-    #println(p[1][1:10])
+    
+    #pR_length = gas.n_species*2 + 3
+    pR_length = 3 #(length(p)==gas.n_reactions*3) ? 3 : Int64(length(p)/gas.n_reactions)
+    
     for i in 1:gas.n_reactions
+        #pR= @view(p[1+(i-1)*pR_length:i*pR_length]) 
         pR = @view(p[1+(i-1)*pR_length:pR_length*i])
-        rateOfProgress!(omegaY, pR, T, C, S0_R, h_RT)
+        rateOfProgress!(omegaY, gas.reactions[i], T, C, S0_R, h_RT,pR)
+          #omegaY[RoP.nzind] += RoP.nzval 
+    end
+    #omegaY .= omegaY 
+    
+    return nothing
+end
+
+function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector,rho,p::AbstractVector,NNmodel,Y::AbstractVector) 
+    omegaY .= 0.0
+    
+    #pR_length = gas.n_species*2 + 3
+    #pR_length = (length(p)==gas.n_reactions*3) ? 3 : Int64(length(p)/gas.n_reactions)
+    pR_length = Int64(length(p)/gas.n_reactions)
+    for i in 1:gas.n_reactions
+        #pR= @view(p[1+(i-1)*pR_length:i*pR_length]) 
+        pR = @view(p[1+(i-1)*pR_length:pR_length*i])
+        rateOfProgress!(omegaY, gas.reactions[i], T, C, S0_R, h_RT,pR,NNmodel,Y)
           #omegaY[RoP.nzind] += RoP.nzval 
     end
     #omegaY .= omegaY 
@@ -216,16 +254,40 @@ function remakeReactions!(gas,p)
     end
 end
 
-function getReactionParams(gas)
+function remakeArrhenius!(gas,p)
+    for (i,reaction) in enumerate(gas.reactions)
+        index = (i-1) * 3 +1 : (3*i)
+        reaction.Arrhenius_coeffs .= p[index]
+        reaction.Arrhenius_coeffs[1] = exp10(reaction.Arrhenius_coeffs[1])
+        reaction.Arrhenius_coeffs[3] = (reaction.Arrhenius_coeffs[3])^3
+    end
+    return nothing
+end
+
+function getReactionParams(gas,bool)
     p = zeros((gas.n_species*2 + 3 )*gas.n_reactions)
     pR_length = gas.n_species*2 + 3 
     for (i,reaction) in enumerate(gas.reactions)
-        ArrCoeffs = reaction.Arrhenius_coeffs
-        ArrCoeffs[1]= log(ArrCoeffs[1])
+        ArrCoeffs = copy(reaction.Arrhenius_coeffs)
+        ArrCoeffs[1]= log10(ArrCoeffs[1])  #log10 # set to log_scale
+        ArrCoeffs[3]= cbrt(ArrCoeffs[3]) #ArrCoeffs[3]#
         pR = [reaction.product_stoich_coeffs ; reaction.reactant_stoich_coeffs ; ArrCoeffs]
         p[1+(i-1)*pR_length:i*pR_length] = pR
     end
     return p
 end
 
-export calc_omegaY!, calc_omegaY, remakeReactions!, getReactionParams
+function getReactionParams(gas)
+    p = zeros(3 *gas.n_reactions)
+    for (i,reaction) in enumerate(gas.reactions)
+        ArrCoeffs = copy(reaction.Arrhenius_coeffs)
+        ArrCoeffs[1]= log10(ArrCoeffs[1])  #log10 # set to log_scale
+        ArrCoeffs[3]= cbrt(ArrCoeffs[3]) #ArrCoeffs[3]#
+        p[1+(i-1)*3:i*3] = ArrCoeffs
+    end
+    return p
+end
+
+
+
+export calc_omegaY!, calc_omegaY, remakeReactions!, remakeArrhenius!, getReactionParams
