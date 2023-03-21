@@ -63,8 +63,10 @@ calculates the dimensionless mole based enthalpy (h) for each species
 """
 function cal_h_RT(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
-    poly = selectPoly(thermo,T,1:6)
-    h_mole = poly * H_T 
+    #poly = selectPoly(thermo,T,1:6)
+    #h_mole = poly * H_T
+
+    h_mole = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,1:6] + (0.5 * tanh(T-1000) + 0.5) * thermo.nasa_high[:,1:6]) * H_T
     #if !thermo.isTcommon
     #   ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
     #   h_mole[ind_correction] .=
@@ -81,8 +83,10 @@ calculates the dimensionless mole based reference state entropy (s0) for each sp
 """
 function cal_s0_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
-    poly = selectPoly(thermo,T,[1, 2, 3, 4, 5, 7])
-    S0 = poly * S_T 
+    #poly = selectPoly(thermo,T,[1, 2, 3, 4, 5, 7])
+    #S0 = poly * S_T 
+
+    S0 = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,[1, 2, 3, 4, 5, 7]] + (0.5 * tanh(T-1000) + 0.5) * thermo.nasa_high[:,[1, 2, 3, 4, 5, 7]]) * S_T
     #if !thermo.isTcommon
     #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
     #    S0[ind_correction] .=
@@ -137,8 +141,12 @@ at constant pressure (cp) for each species
 """
 function cal_cp_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     cp_T = [1.0, T, T^2, T^3, T^4]
-    poly = selectPoly(thermo,T,1:5)
-    cp = poly * cp_T
+    #poly = selectPoly(thermo,T,1:5)
+    # cp = poly * cp_T
+
+    cp = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,1:5] + (0.5 * tanh(T-1000) + 0.5)  * thermo.nasa_high[:,1:5]) * cp_T
+
+    
     #TODO: not sure if inplace operation will be an issue for AD
     #if !thermo.isTcommon
     #   ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
