@@ -59,3 +59,34 @@ function mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
     return η_mix, λ_mix, Dkm
 end
 export mix_trans
+
+function viscosity(gas::A, T, X) where {A <: Arrhenius.Solution}
+
+    logT = log(T)
+    trans_T = [logT^6, logT^5, logT^4, logT^3, logT^2, logT, 1.0]
+    
+    ## species_viscosities_poly
+
+    η = trans_T' * gas.trans.species_viscosities_poly
+
+    Wk_over_Wj = gas.MW * (1.0 ./ gas.MW')
+
+    Wj_over_Wk = 1 ./ Wk_over_Wj
+
+    ηk_over_ηj = η' * (1.0 ./ η)
+
+    Φ = @. 1.0 / sqrt(8.0) / sqrt(1.0 + Wk_over_Wj) * 
+        (1.0 + sqrt(ηk_over_ηj) * (Wj_over_Wk)^(0.25))^2
+
+    return sum((X .* η') ./ (Φ * X))
+end
+
+function conductivity(gas::A, T, X) where {A <: Arrhenius.Solution}
+    logT = log(T)
+    trans_T = [logT^6, logT^5, logT^4, logT^3, logT^2, logT, 1.0]
+    ## thermal_conductivity_func
+    λ = trans_T' * gas.trans.thermal_conductivity_poly
+
+    return (sum(X .* λ') + 1.0 / sum(X ./ λ')) / 2.0
+end
+export conductivity , viscosity

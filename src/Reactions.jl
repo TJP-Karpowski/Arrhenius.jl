@@ -288,6 +288,6 @@ function getReactionParams(gas)
     return p
 end
 
-include("forwardTraining.jl")
+#include("forwardTraining.jl")
 
 export calc_omegaY!, calc_omegaY, remakeReactions!, remakeArrhenius!, getReactionParams
