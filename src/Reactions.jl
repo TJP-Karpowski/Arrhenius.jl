@@ -65,18 +65,30 @@ ArrheniusLaw(reaction::AbstractReaction,T::Real) = ArrheniusLaw(reaction.Arrheni
 forwardRate(reaction::AbstractReaction,T::Real,C::AbstractVector) = ArrheniusLaw(reaction,T) 
 
 function forwardRate(reaction::reversibleThreeBodyReaction,T::Real,C::AbstractVector)
-    return  ArrheniusLaw(reaction,T) * dot(reaction.efficiency_coeffs, C)
+    dot_C_eff = one(C[1])
+    for i ∈ eachindex(C)
+        dot_C_eff += reaction.efficiency_coeffs[i] * C[i]
+    end
+    return  ArrheniusLaw(reaction,T) * dot_C_eff
 end
 
 function forwardRate(reaction::reversibleFalloffReaction, T::Real, C::AbstractVector)
-        kf = ArrheniusLaw(reaction,T)
-        Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot(reaction.efficiency_coeffs, C) / kf
-        kf *= (Pr / (1 + Pr))
-        return kf
+    kf = ArrheniusLaw(reaction,T)
+    dot_C_eff = one(C[1])
+    for i ∈ eachindex(C)
+        dot_C_eff += reaction.efficiency_coeffs[i] * C[i]
+    end
+    Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot_C_eff / kf
+    kf *= (Pr / (1 + Pr))
+    return kf
 end
 function forwardRate(reaction::reversibleTroeReaction{AT1,<:AbstractVector}, T::Real, C::AbstractVector) where AT1 <: AbstractVector
     kf = ArrheniusLaw(reaction,T)
-    Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot(reaction.efficiency_coeffs, C) / kf
+    dot_C_eff = one(C[1])
+    for i ∈ eachindex(C)
+        dot_C_eff += reaction.efficiency_coeffs[i] * C[i]
+    end
+    Pr =  ArrheniusLaw(reaction.Arrhenius_coeffs_falloff,T) * dot_C_eff / kf
     kf *= (Pr / (1 + Pr))
     lPr = log10(Pr)
     F_cent =
@@ -91,16 +103,31 @@ function forwardRate(reaction::reversibleTroeReaction{AT1,<:AbstractVector}, T::
     return kf
 end
 
-function backwardRate(reaction::reversibleReaction, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
-    ΔS_R = dot(reaction.vk, S0_R)
-    ΔH_RT = dot(reaction.vk, h_RT)
+@inbounds function backwardRate(reaction::reversibleReaction, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
+    # following same as ΔH_RT = dot(vk ,S0_R) but non alocating
+    ΔS_R = S0_R[1]*0.0
+    for i ∈ eachindex(S0_R)
+        ΔS_R += reaction.vk[i]*S0_R[i]
+    end
+    # following same as ΔH_RT = dot(vk ,h_RT) but non alocating
+    ΔH_RT = h_RT[1]*0.0
+    for i ∈ eachindex(h_RT)
+        ΔH_RT += reaction.vk[i]*h_RT[i]
+    end
     denum =  exp(ΔS_R - ΔH_RT) * (one_atm / R / T)^reaction.vk_sum
     return kf / denum
 end
 
 function backwardRate(vk::AbstractVector, T,kf, S0_R::AbstractVector, h_RT::AbstractVector) 
-    ΔS_R = dot(vk, S0_R)
-    ΔH_RT = dot(vk, h_RT)
+    ΔS_R = S0_R[1]*0.0
+    for i ∈ eachindex(S0_R)
+        ΔS_R += reaction.vk[i]*S0_R[i]
+    end
+    # following same as ΔH_RT = dot(vk ,h_RT) but non alocating
+    ΔH_RT = h_RT[1]*0.0
+    for i ∈ eachindex(h_RT)
+        ΔH_RT += reaction.vk[i]*h_RT[i]
+    end
     recip_denum = 1. /( (one_atm / R / T)^sum(vk) * exp(ΔS_R - ΔH_RT ))
     
     return kf * recip_denum  #reaction.vk_sum) 
@@ -146,51 +173,53 @@ function rateOfProgress!(omegaY::AbstractVector,reaction::AbstractReaction{AT1,A
     kf = forwardRate(reaction,T, C) 
     kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
     Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))
-    vk = reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs
-    index_dense = vk .!= 0 
-    omegaY[index_dense] += vk[index_dense] * Qj
+    # vk = reaction.product_stoich_coeffs - reaction.reactant_stoich_coeffs
+    # index_dense = vk .!= 0 
+    # omegaY[index_dense] += vk[index_dense] * Qj
+    for (i, index_dense) in enumerate(reaction.vk.nzind)
+        @inbounds omegaY[index_dense] += reaction.vk.nzval[i] * Qj
+    end
     return nothing
 end
 
-function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector) 
-    #product_stoich_coeffs = pReaction[1:length(C)]
-    #rectant_stoich_coeffs = pReaction[length(C)+1:length(C)*2]
-    Arrhenius_coeffs = copy(pReaction)#[length(C)*2+1:end])
-    Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
-    Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
-    #vk = product_stoich_coeffs - rectant_stoich_coeffs
-    kf = ArrheniusLaw(Arrhenius_coeffs,T)   
-    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
-    #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
-    Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
-    index_dense = reaction.vk .!= 0 
-    omegaY[index_dense] += reaction.vk[index_dense] * Qj
-    #@. omegaY += vk * Qj
-    return nothing
-end
+# function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector) 
+#     #product_stoich_coeffs = pReaction[1:length(C)]
+#     #rectant_stoich_coeffs = pReaction[length(C)+1:length(C)*2]
+#     Arrhenius_coeffs = copy(pReaction)#[length(C)*2+1:end])
+#     Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
+#     Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
+#     #vk = product_stoich_coeffs - rectant_stoich_coeffs
+#     kf = ArrheniusLaw(Arrhenius_coeffs,T)   
+#     kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+#     #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
+#     Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
+#     index_dense = reaction.vk .!= 0 
+#     omegaY[index_dense] += reaction.vk[index_dense] * Qj
+#     #@. omegaY += vk * Qj
+#     return nothing
+# end
 
-function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector,NNmodel,Y::AbstractVector) 
-    pNN = @view(pReaction[1:end-3])
-    Arrhenius_coeffs = copy(pReaction[end-2:end])#[length(C)*2+1:end])
-    Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
-    Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
-    #vk = product_stoich_coeffs - rectant_stoich_coeffs
-    kf = ArrheniusLaw(Arrhenius_coeffs,T) * NNmodel(Y,pNN)[1]   
-    kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
-    #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
-    Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
-    index_dense = reaction.vk .!= 0 
-    omegaY[index_dense] += reaction.vk[index_dense] * Qj
-    #@. omegaY += vk * Qj
-    return nothing
-end
+#function rateOfProgress!(omegaY::AbstractVector, reaction::AbstractReaction,  T::Real, C::AbstractVector, S0_R::AbstractVector, h_RT::AbstractVector, pReaction::AbstractVector,NNmodel,Y::AbstractVector) 
+#     pNN = @view(pReaction[1:end-3])
+#     Arrhenius_coeffs = copy(pReaction[end-2:end])#[length(C)*2+1:end])
+#     Arrhenius_coeffs[1] = exp10(Arrhenius_coeffs[1])
+#     Arrhenius_coeffs[3] = Arrhenius_coeffs[3]^3
+#     #vk = product_stoich_coeffs - rectant_stoich_coeffs
+#     kf = ArrheniusLaw(Arrhenius_coeffs,T) * NNmodel(Y,pNN)[1]   
+#     kr = backwardRate(reaction,T, kf, S0_R, h_RT) 
+#     #Qj = (kf * Omega_C_powOrder(C,rectant_stoich_coeffs) - kr * Omega_C_powOrder(C,product_stoich_coeffs))    
+#     Qj = (kf * Omega_C_powOrder(C,reaction.reactant_orders) - kr * Omega_C_powOrder(C,reaction.product_stoich_coeffs))    
+#     index_dense = reaction.vk .!= 0 
+#     omegaY[index_dense] += reaction.vk[index_dense] * Qj
+#     #@. omegaY += vk * Qj
+#     return nothing
+# end
 
 function calc_omegaY!(omegaY::AbstractVector,gas::Solution, T, C, S0_R, h_RT,rho) 
     omegaY .= 0.0
     #RoP = sparse(similar(C))
-    for i in 1:gas.n_reactions
-        @inbounds rateOfProgress!(omegaY, gas.reactions[i], T, C, S0_R, h_RT)
-          #omegaY[RoP.nzind] += RoP.nzval 
+    @inbounds for i in 1:gas.n_reactions
+        rateOfProgress!(omegaY, gas.reactions[i], T, C, S0_R, h_RT)
     end
     #omegaY .= omegaY 
     
