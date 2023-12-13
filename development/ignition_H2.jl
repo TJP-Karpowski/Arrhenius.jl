@@ -1,33 +1,31 @@
+cd("/Users/jkarpowski/source-work/Arrhenius/development/")
 using Pkg
-Pkg.activate("/home/jeremy/flame-solver")
+Pkg.activate(".")
 using LinearAlgebra
 using DifferentialEquations
 using ForwardDiff
 #using DiffEqSensitivity
 using Sundials
 using Plots
-using DelimitedFiles
-using Profile
 using BenchmarkTools
-using ModelingToolkit
 #using PProf
+using ModelingToolkit
 using Revise
 using Arrhenius
 
 
 
 
-using TimerOutputs
-const tmr = TimerOutput();
 
 #@register Arrhenius.selectPoly(thermo, T,range)
 
 #@register_symbolic wdot_here(reaction::Any, T::Any, C::Any, S0::Any, h_mole::Any)
 
-cd("/home/jeremy/flame-solver/Arrhenius-jl/development")
+#cd("/home/jeremy/flame-solver/Arrhenius-jl/development")
 
 
-const gas_H2 = CreateSolution("../mechanism/h2o2.yaml",sparseCoeffs=true)
+const gas_H2 = CreateSolution("../mechanism/h2_li_2004.yaml")
+const gas_H2_old = CreateSolution("../mechanism/h2_li_2004.yaml";reorderReactions=false)
 ns = gas_H2.n_species
 
 T0 = 980.0 
@@ -36,7 +34,7 @@ P = 15 * 101325
 X0 = zeros(ns);
 X0[species_index(gas_H2, "H2")] = 1.0 / 2.0
 X0[species_index(gas_H2, "O2")] = 1.0
-X0[species_index(gas_H2, "AR")] = 0
+X0[species_index(gas_H2, "N2")] = 3.76
 X0 = X0 ./ sum(X0);
 Y0 = X2Y(gas_H2, X0, dot(X0, gas_H2.MW));
 
@@ -44,22 +42,25 @@ Y0 = X2Y(gas_H2, X0, dot(X0, gas_H2.MW));
 u0 = vcat(Y0, T0)
 du0 = zeros(length(u0))
 
-mutable struct isobaricReactor{Type<:Number,Sol<:Arrhenius.Solution} <: Function
+mutable struct isobaricReactor{vecT<:AbstractVector,arrayT<:AbstractArray,typ<:Real,Sol<:Arrhenius.Solution} <: Function
     gas::Sol
-    nasa_poly::Array{Type}
-    T::Type 
-    p::Type
-    X::Vector{Type}
-    C::Vector{Type}
-    h_RT::Vector{Type}
-    s0_R::Vector{Type}
-    cp_R::Vector{Type}
-    enthalpy_T_poly::Vector{Type}
-    entropy_T_poly::Vector{Type}
-    cp_T_poly::Vector{Type}
-    ρ_mass::Type
-    mean_MW::Type
-    cp_mass::Type
+    nasa_poly::arrayT
+    T::typ 
+    p::typ
+    X::vecT
+    C::vecT
+    h_RT::vecT
+    s0_R::vecT
+    g_RT::vecT
+    cp_R::vecT
+    kr::vecT
+    kf::vecT
+    enthalpy_T_poly::vecT
+    entropy_T_poly::vecT
+    cp_T_poly::vecT
+    ρ_mass::typ
+    mean_MW::typ
+    cp_mass::typ
    
 end
 
@@ -74,6 +75,9 @@ return isobaricReactor(
     zeros(gas.n_species),
     zeros(gas.n_species),
     zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_reactions),
+    zeros(gas.n_reactions),
     zeros(6),
     zeros(6),
     zeros(5),
@@ -203,8 +207,9 @@ end
     #state.s0_R = cal_s0_R(state.gas,state.T,state.p,state.X)
     cal_h_RT!(state,state.T,state.p)
     cal_s0_R!(state,state.T,state.p)
-    #wY = du[1:end-1]
-    @timeit tmr "calcOmaga" calc_omegaY!( @view(du[1:end-1]),state.gas, state.T, state.C, state.s0_R, state.h_RT,state.ρ_mass) 
+    @. state.g_RT = state.h_RT - state.s0_R
+    wdot_func!(@view(du[1:end-1]),state.kf,state.kr,state.C,state.g_RT,state.gas.kinetics,state.T) 
+    #calc_omegaY!( @view(du[1:end-1]),state.gas, state.T, state.C, state.s0_R, state.h_RT,state.ρ_mass) 
     #du[1:end-1] .= wdot_func(state.gas.kinetics, state.T, state.C, state.s0_R * Arrhenius.R, state.h_RT * Arrhenius.R * state.T )
    
     du[end] *= 0.0
@@ -223,41 +228,45 @@ end
 
 
 functordu! = isobaricReactor(gas_H2)
-# function f_jac(J,u,p,t)
-#     J.= forwardDiff.jacobian(x->dudt!())
-# end
+
 
 
 tspan = [0.0, 0.025];
 prob = ODEProblem(functordu!, u0, tspan, [P]);
-#sys = modelingtoolkitize(prob)
+
+#dudt!(du, u, p, t)=dudt!(du, u, p, t, gas_H2_old)
+#probOld = ODEProblem(dudt!, u0, tspan, [P]);
+
+sys = modelingtoolkitize(prob)
 #prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
 u0 = vcat(Y0, T0)
 du0 = zeros(gas_H2.n_species+1)
 #dudt!(du0, u0, [P],0)
 
-#dudt!(du0, u0, [P],0)
-println("CVODE_BDF:")
-#@btime sol = solve(prob, CVODE_BDF(), dtmax=1e-4, reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff],saveat=0.1) seconds = 5
-#println("Time jacobian:")
-#@btime solve(prob_jac, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
+println("Just the call:")
+@btime functordu!($du0,$u0,$([P]),$(0))
+#@btime dudt!($du0,$u0,$([P]),$(0))
+println("------------------------------------------------")
 
-#println("radau5:")
-#@btime sol = solve(prob, radau5(autodiff=false),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
-#println("Rosenbrock23 (no Autodiff):")
-#@btime sol = solve(prob, Rosenbrock23(autodiff=false),  reltol = 1e-6, abstol = 1e-9,saveat=0.1)  seconds = 5
+
+#dudt!(du0, u0, [P],0)
+
+
+
+println("CVODE_BDF:")
+bm = @benchmark sol = solve(prob, CVODE_BDF(), dtmax=1e-4,dt=1e-8, reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff],save_everystep = false) seconds = 5
+display(bm)
+
+println("Rosenbrock23 (no Autodiff):")
+@btime sol = solve(prob, Rosenbrock23(autodiff=false), dtmax=1e-4,dt=1e-12,  reltol = 1e-6, abstol = 1e-9,save_everystep = false)  seconds = 5
 #println("Rosenbrock23 (with Autodiff):")
-#@btime sol = solve(prob, Rosenbrock23(autodiff=true),  reltol = 1e-6, abstol = 1e-9,saveat=0.1)  seconds = 5
+#@btime sol = solve(probOld, Rosenbrock23(autodiff=true), dtmax=1e-4,dt=1e-12, reltol = 1e-6, abstol = 1e-9,save_everystep = false)  seconds = 5
 # println("Rodas4:")
 # @btime sol = solve(prob, Rodas4(),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
 #println("Rodas3:")
 #@btime sol = solve(prob, Rodas3(),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
-println("Just the call:")
-@btime functordu!($du0,$u0,$([P]),$(0))
-println("------------------------------------------------")
-display(tmr)
- reset_timer!(tmr);
-#sol = solve(prob, CVODE_BDF(),dtmax=1e-4,dt=1e-8,reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff])
+
+sol = solve(prob, CVODE_BDF(),dtmax=1e-4,dt=1e-8,reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff])
 plt = plot(
     sol.t ,
     sol[species_index(gas_H2, "H2"), :],

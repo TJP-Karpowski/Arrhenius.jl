@@ -9,7 +9,7 @@ function ignition_test(;plotting=false)
     ct_T = cantera_data[:, 2]
     ct_Y = cantera_data[:, 3:end]
 
-    gas = CreateSolution("../mechanism/gri30.yaml",sparseCoeffs=true)
+    gas = CreateSolution("../mechanism/gri30.yaml")
     ns = gas.n_species
 
     T0 = 980.0

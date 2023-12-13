@@ -10,12 +10,13 @@ module Arrhenius
     
     include("Constants.jl")
     include("DataStructure.jl")
-    include("Reactions.jl")
+    #include("Reactions.jl")
+    include("ReorderedKinetics.jl")
     include("Solution.jl")
     include("Magic.jl")
     include("Thermo.jl")
     
-    include("Kinetics.jl")
+    include("StandardKinetics.jl")
     include("Transport.jl")
     include("ODE_functions.jl")
 end

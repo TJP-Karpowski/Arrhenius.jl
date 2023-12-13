@@ -1,3 +1,5 @@
+#deprecated to complicated and slow does not vectorize 
+
 abstract type reversibleReaction{AT1,AT2} <: AbstractReaction{AT1,AT2} end
 
 struct arrheniusReaction{AT1 <: AbstractVector, AT2 <: AbstractVector} <: AbstractReaction{AT1,AT2} 

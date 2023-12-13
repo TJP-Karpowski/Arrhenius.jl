@@ -1,0 +1,10 @@
+CVODE_BDF:
+  237.677 ms (430759 allocations: 98.21 MiB)
+Rosenbrock23 (no Autodiff):
+  5.104 s (8896957 allocations: 2.01 GiB)
+Rosenbrock23 (with Autodiff):
+  1.512 s (1598863 allocations: 1.64 GiB)
+Rodas4:
+  712.942 ms (854157 allocations: 747.58 MiB)
+Rodas3:
+  2.072 s (2188151 allocations: 2.25 GiB)

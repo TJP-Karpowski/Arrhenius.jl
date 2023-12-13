@@ -8,7 +8,6 @@ using Plots
 using DelimitedFiles
 using Profile
 using BenchmarkTools
-using ModelingToolkit
 #using PProf
 using Revise
 using Arrhenius
@@ -27,7 +26,8 @@ ct_ts = cantera_data[:, 1]
 ct_T = cantera_data[:, 2]
 ct_Y = cantera_data[:, 3:end]
 
-const gas = CreateSolution("../mechanism/gri30.yaml",sparseCoeffs=true)
+const gas = CreateSolution("../mechanism/gri30.yaml")
+const gas_old = CreateSolution("../mechanism/gri30.yaml";reorderReactions=false)
 ns = gas.n_species
 
 T0 = 980.0
@@ -54,13 +54,12 @@ u0 = vcat(Y0, T0)
     S0_R = Arrhenius.cal_s0_R(gas, T, P, X)
     #wY = du[1:end-1]
     #calc_omegaY!( @view(du[1:end-1]),gas, T, C, S0_R, h_RT,ρ_mass) 
-    du[1:end-1] .=0.0 #du[1:end-1] .* gas.MW ./ ρ_mass
-    #@timeit tmr "old" wdot_new = wdot_func(gas.kinetics, T, C, S0_R * R, h_RT * R * T)
-    #du[1:end-1] = wdot_new / ρ_mass .* gas.MW
-    du[end] = -dot(h_RT * R * T ./ gas.MW, du[1:end-1]) / cp_mass
+    du[1:end-1] = wdot_func(gas.kinetics, T, C, S0_R , h_RT )
+    du[1:end-1] =  @view(du[1:end-1]) / ρ_mass .* gas.MW
+    du[end] = -dot(h_RT * R * T ./ gas.MW,  @view(du[1:end-1])) / cp_mass
     return nothing
 end
-dudt!(du, u, p, t)=dudt!(du, u, p, t, gas)
+
 # function f_jac(J,u,p,t)
 #     J.= forwardDiff.jacobian(x->dudt!())
 # end
@@ -68,6 +67,7 @@ dudt!(du, u, p, t)=dudt!(du, u, p, t, gas)
 CH4dudt! = isobaricReactor(gas)
 tspan = [0.0, 0.1];
 prob = ODEProblem(CH4dudt!, u0, tspan, [P]);
+
 #sys = modelingtoolkitize(prob)
 #prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
 u0 = vcat(Y0, T0)
@@ -75,24 +75,25 @@ du0 = zeros(54)
 dudt!(du0, u0, [],0)
 #reset_timer!(tmr);
 dudt!(du0, u0, [],0)
-println("CVODE_BDF:")
-@btime solve(prob, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
-#println("Time jacobian:")
-#@btime solve(prob_jac, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff]) seconds = 5
+#println("CVODE_BDF:")
+#@btime solve($prob, $(CVODE_BDF(linear_solver=:GMRES)),dtmax = 1e-5, dt=1e-12,reltol = 1e-8, abstol = 1e-10,alg_hints = [:stiff]) seconds = 5
+#@btime solve($probOld,$(CVODE_BDF(linear_solver=:GMRES)),dtmax = 1e-5, dt=1e-12,reltol = 1e-8, abstol = 1e-10,alg_hints = [:stiff]) seconds = 5
 
 #println("radau5:")
 #@btime sol = solve(prob, radau5(autodiff=false),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
 println("Rosenbrock23 (no Autodiff):")
-@btime sol = solve(prob, Rosenbrock23(autodiff=false),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
-#println("Rosenbrock23 (with Autodiff):")
-#@btime sol = solve(prob, Rosenbrock23(autodiff=true),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
+@btime sol = solve(prob, Rosenbrock23(autodiff=false),  reltol = 1e-8, abstol = 1e-10,save_everystep = false)  seconds = 5
+#@btime sol = solve(probOld, Rosenbrock23(autodiff=false),  reltol = 1e-8, abstol = 1e-10,save_everystep = false)  seconds = 5
+
+println("Rosenbrock23 (with Autodiff):")
+@btime sol = solve(probOld, Rosenbrock23(autodiff=true),  reltol = 1e-6, abstol = 1e-9,save_everystep = false)  seconds = 5
 # println("Rodas4:")
 # @btime sol = solve(prob, Rodas4(),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
 #println("Rodas3:")
 #@btime sol = solve(prob, Rodas3(),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
 
 
-sol = solve(prob, CVODE_BDF(),  reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff])
+sol = solve(prob, CVODE_BDF(),dtmax = 1e-5, dt=1e-10,  reltol = 1e-9, abstol = 1e-10,alg_hints = [:stiff])
 tmin = 1.e-2
 plt = plot(
     sol.t .+ tmin,

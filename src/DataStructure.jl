@@ -1,4 +1,7 @@
-struct Kinetics
+abstract type Kinetics end
+
+
+struct StandardKinetics<: Kinetics
     product_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
     reactant_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
     reactant_orders::SparseMatrixCSC{Float64,Int64}
@@ -19,9 +22,25 @@ end
 
 abstract type Thermo end
 
-abstract type AbstractReaction{AT1<:AbstractVector,AT2<:AbstractVector} end
-#abstract type Kinetic end
 
+
+struct ReorderedKinetics{Ty<:AbstractArray,sTy<:AbstractArray,vTy<:AbstractVector} <: Kinetics
+    arrhenius_coeffs::Ty
+    reactant_orders::sTy
+    product_stoich_coeffs::sTy
+    reactant_stoich_coeffs::sTy
+    vk::sTy
+    vk_rev::sTy
+    vk_sum::vTy
+    efficiency_coeffs_tB::sTy
+    efficiency_coeffs_fO::sTy
+    Arrhenius_0::Ty
+    troe::Ty
+    index_rev_start::Int64
+    index_three_body_start::Int64
+    index_fallOff_start::Int64
+    index_troe_start::Int64
+end
 
 struct Transport
     poly_order::Int64
@@ -30,15 +49,14 @@ struct Transport
     binary_diff_coeffs_poly::Array{Float64,2}
 end
 
-struct Solution
+struct Solution{Ty<:Thermo,kinTy<:Kinetics}
     n_species::Int64
     n_reactions::Int64
     MW::Vector{Float64}
     species_names::Vector{String}
     elements::Vector{String}
     ele_matrix::Array{Float64,2}
-    thermo::Thermo
+    thermo::Ty
     trans::Transport
-    reactions::Tuple{Vararg{AbstractReaction{<:AbstractVector{<:Real},<:AbstractVector{<:Real}}}}
-    kinetics
+    kinetics::kinTy
 end

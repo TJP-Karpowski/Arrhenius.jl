@@ -29,7 +29,7 @@ from the yaml file, pary of them are from the pre-processed .npz file from
 ReacTorch and Cantera
 test for math enviroment
 """
-function CreateSolution(mech;sparseCoeffs=false)
+function CreateSolution(mech; reorderReactions = true)
     yaml = YAML.load_file(mech)
 
     #### Basics
@@ -54,6 +54,16 @@ function CreateSolution(mech;sparseCoeffs=false)
     reactant_stoich_coeffs = sparse(npz["reactant_stoich_coeffs"])
     reactant_orders = sparse(npz["reactant_orders"])
     is_reversible = npz["is_reversible"]
+    for (i,mech_reaction) in enumerate(yaml["reactions"])
+        #println("reaction $i: $(mech_reaction["equation"])")
+        if !haskey(mech_reaction, "type") 
+            if occursin("<=>",mech_reaction["equation"])
+                is_reversible[i]=true
+            end
+        else
+            is_reversible[i]=true
+        end
+    end
     Arrhenius_coeffs = npz["Arrhenius_coeffs"]
     if haskey(npz, "Arrhenius_A0")
         Arrhenius_A0 = npz["Arrhenius_A0"]
@@ -117,156 +127,8 @@ function CreateSolution(mech;sparseCoeffs=false)
         end
     end
     efficiencies_coeffs = sparse(efficiencies_coeffs_full)
-    reactions = []
-    fallOff_index = 1
-    Troe_index = 1
-    if sparseCoeffs
-        for (i,mech_reaction) in enumerate(yaml["reactions"])
-            #println("reaction $i: $(mech_reaction["equation"])")
-            if !haskey(mech_reaction, "type") 
-                if occursin("<=>",mech_reaction["equation"])
-                    reac = reversibleArrheniusReaction(
-                        product_stoich_coeffs[:,i],
-                        reactant_stoich_coeffs[:,i],
-                        reactant_orders[:,i],
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]
-                        )
-                    push!(reactions,reac)
-                else 
-                    reac = arrheniusReaction(
-                        product_stoich_coeffs[:,i],
-                        reactant_stoich_coeffs[:,i],
-                        reactant_orders[:,i],
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]
-                        )
-                    push!(reactions,reac)
-                end
-            elseif mech_reaction["type"]=="three-body"
-                reac = reversibleThreeBodyReaction(
-                    product_stoich_coeffs[:,i],
-                    reactant_stoich_coeffs[:,i],
-                    reactant_orders[:,i],
-                    npz["Arrhenius_coeffs"][i,:],
-                    #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
-                    sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                    product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
-                    sparse(efficiencies_coeffs_full[:, i]),
-                    )
-                push!(reactions,reac)
-            elseif mech_reaction["type"]=="falloff"
-                if !haskey(mech_reaction, "Troe") 
-                    reac = reversibleFalloffReaction(
-                        product_stoich_coeffs[:,i],
-                        reactant_stoich_coeffs[:,i],
-                        reactant_orders[:,i],
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
-                        sparse(efficiencies_coeffs_full[:, i]),
-                        [npz["Arrhenius_A0"][fallOff_index],
-                        npz["Arrhenius_b0"][fallOff_index],
-                        npz["Arrhenius_Ea0"][fallOff_index]]
-                    )    
-                    push!(reactions,reac)
-                else
-                    reac = reversibleTroeReaction(
-                        product_stoich_coeffs[:,i],
-                        reactant_stoich_coeffs[:,i],
-                        reactant_orders[:,i],
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i],
-                        sparse(efficiencies_coeffs_full[:, i]),
-                        [npz["Arrhenius_A0"][fallOff_index],
-                            npz["Arrhenius_b0"][fallOff_index],
-                            npz["Arrhenius_Ea0"][fallOff_index]],
-                        Troe_[Troe_index,:]
-                        )    
-                    push!(reactions,reac)
-                    Troe_index +=1
-                end
-                fallOff_index += 1
-            end
-        end
-    else
-        for (i,mech_reaction) in enumerate(yaml["reactions"])
-            #println("reaction $i: $(mech_reaction["equation"])")
-            if !haskey(mech_reaction, "type") 
-                if occursin("<=>",mech_reaction["equation"])
-                    reac = reversibleArrheniusReaction(
-                        Array(product_stoich_coeffs[:,i]),
-                        Array(reactant_stoich_coeffs[:,i]),
-                        Array(reactant_orders[:,i]),
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        )
-                    push!(reactions,reac)
-                else 
-                    reac = arrheniusReaction(
-                        Array(product_stoich_coeffs[:,i]),
-                        Array(reactant_stoich_coeffs[:,i]),
-                        Array(reactant_orders[:,i]),
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        )
-                    push!(reactions,reac)
-                end
-            elseif mech_reaction["type"]=="three-body"
-                reac = reversibleThreeBodyReaction(
-                    Array(product_stoich_coeffs[:,i]),
-                    Array(reactant_stoich_coeffs[:,i]),
-                    Array(reactant_orders[:,i]),
-                    npz["Arrhenius_coeffs"][i,:],
-                    #[mech_reaction["rate-constant"]["A"],mech_reaction["rate-constant"]["b"],mech_reaction["rate-constant"]["Ea"]]
-                    sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                    Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                    efficiencies_coeffs_full[:, i],
-                    )
-                push!(reactions,reac)
-            elseif mech_reaction["type"]=="falloff"
-                if !haskey(mech_reaction, "Troe") 
-                    reac = reversibleFalloffReaction(
-                        Array(product_stoich_coeffs[:,i]),
-                        Array(reactant_stoich_coeffs[:,i]),
-                        Array(reactant_orders[:,i]),
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        efficiencies_coeffs_full[:, i],
-                        [npz["Arrhenius_A0"][fallOff_index],
-                        npz["Arrhenius_b0"][fallOff_index],
-                        npz["Arrhenius_Ea0"][fallOff_index]]
-                    )    
-                    push!(reactions,reac)
-                else
-                    reac = reversibleTroeReaction(
-                        Array(product_stoich_coeffs[:,i]),
-                        Array(reactant_stoich_coeffs[:,i]),
-                        Array(reactant_orders[:,i]),
-                        npz["Arrhenius_coeffs"][i,:],
-                        sum(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        Array(product_stoich_coeffs[:,i] - reactant_stoich_coeffs[:,i]),
-                        efficiencies_coeffs_full[:, i],
-                        [npz["Arrhenius_A0"][fallOff_index],
-                            npz["Arrhenius_b0"][fallOff_index],
-                            npz["Arrhenius_Ea0"][fallOff_index]],
-                        Troe_[Troe_index,:]
-                        )    
-                    push!(reactions,reac)
-                    Troe_index +=1
-                end
-                fallOff_index += 1
-            end
-        end
-    end
-    reactions = tuple(reactions...)
-    kinetics = Kinetics(
+    
+    kinetics = StandardKinetics(
         product_stoich_coeffs,
         reactant_stoich_coeffs,
         reactant_orders,
@@ -285,7 +147,9 @@ function CreateSolution(mech;sparseCoeffs=false)
         vk_sum,
     )
 
-
+    if reorderReactions 
+        kinetics = ReorderedKinetics(kinetics)
+    end
     #### Transport data
 
     if haskey(npz, "species_viscosities_poly")
@@ -314,26 +178,119 @@ function CreateSolution(mech;sparseCoeffs=false)
         ele_matrix,
         thermo,
         trans,
-        reactions, 
-        kinetics
+        kinetics,
     )
     return gas
 end
 
-function CreateSolution(gas::Solution,reactions::Tuple{Vararg{AbstractReaction{<:AbstractVector{<:Real},<:AbstractVector{<:Real}}}})
-    gas_ = deepcopy(gas)
-    return Solution(
-        gas_.n_species,
-        length(reactions),
-        gas_.MW,
-        gas_.species_names,
-        gas_.elements,
-        gas_.ele_matrix,
-        gas_.thermo,
-        gas_.trans,
-        reactions, 
-        gas_.kinetics
-    )
-end
-
 export CreateSolution
+
+function ReorderedKinetics(kinetics::StandardKinetics)
+    i_forward = .!(kinetics.is_reversible)
+    i_rev = Int64[]
+    for (i) in 1:kinetics.n_reactions
+        if !(i in  kinetics.index_three_body) & !(i in  kinetics.index_falloff) & kinetics.is_reversible[i]
+            push!(i_rev,i)
+        end
+
+    end
+    i_tB = kinetics.index_three_body
+    i_fO = Int64[]
+    i_troe = Int64[]
+    i_A0_fO = Int64[]
+    i_A0_troe = Int64[]
+    for (i, index) in enumerate(kinetics.index_falloff )
+        if kinetics.index_falloff_Troe[i] < 0
+            push!(i_fO,index)
+            push!(i_A0_fO,i)
+        else
+            push!(i_troe,index)
+            push!(i_A0_troe,i)
+        end
+    end
+
+    arr_coeffs = vcat(
+        kinetics.Arrhenius_coeffs[i_forward,:],
+        kinetics.Arrhenius_coeffs[i_rev,:],
+        kinetics.Arrhenius_coeffs[i_tB,:],
+        kinetics.Arrhenius_coeffs[i_fO,:],
+        kinetics.Arrhenius_coeffs[i_troe,:],
+        )
+
+    reactant_orders = hcat(
+        kinetics.reactant_orders[:,i_forward],
+        kinetics.reactant_orders[:,i_rev],
+        kinetics.reactant_orders[:,i_tB],
+        kinetics.reactant_orders[:,i_fO],
+        kinetics.reactant_orders[:,i_troe])
+
+    product_stoich_coeffs = hcat(
+        kinetics.product_stoich_coeffs[:,i_rev],
+        kinetics.product_stoich_coeffs[:,i_tB],
+        kinetics.product_stoich_coeffs[:,i_fO],
+        kinetics.product_stoich_coeffs[:,i_troe])
+
+    reactant_stoich_coeffs = hcat(
+        kinetics.reactant_stoich_coeffs[:,i_rev],
+        kinetics.reactant_stoich_coeffs[:,i_tB],
+        kinetics.reactant_stoich_coeffs[:,i_fO],
+        kinetics.reactant_stoich_coeffs[:,i_troe])
+
+    vk = sparse(vcat(
+        kinetics.vk[:,i_forward]',
+        kinetics.vk[:,i_rev]',
+        kinetics.vk[:,i_tB]',
+        kinetics.vk[:,i_fO]',
+        kinetics.vk[:,i_troe]'
+        ))
+
+    vk_rev = sparse(vcat(
+        kinetics.vk[:,i_rev]',
+        kinetics.vk[:,i_tB]',
+        kinetics.vk[:,i_fO]',
+        kinetics.vk[:,i_troe]'))
+
+    vk_sum = vcat(
+        kinetics.vk_sum[i_rev],
+        kinetics.vk_sum[i_tB],
+        kinetics.vk_sum[i_fO],
+        kinetics.vk_sum[i_troe]
+    )
+
+    efficiency_coeffs_tB=kinetics.efficiencies_coeffs[:,i_tB]
+
+    efficiency_coeffs_fO = hcat(
+        kinetics.efficiencies_coeffs[:,i_fO],
+        kinetics.efficiencies_coeffs[:,i_troe])
+
+    Arrhenius_0 =vcat(
+        kinetics.Arrhenius_0[i_A0_fO,:],
+        kinetics.Arrhenius_0[i_A0_troe,:])
+
+    troe =kinetics.Troe_
+
+    index_rev_start = sum(i_forward)+1
+    index_three_body_start = index_rev_start + length(i_rev) 
+    index_fallOff_start = index_three_body_start + length(i_tB) 
+    index_troe_start = index_fallOff_start + length(i_fO) 
+    index_troe_start+length(i_troe)
+
+    return ReorderedKinetics(
+        arr_coeffs,
+        reactant_orders,
+        product_stoich_coeffs,
+        reactant_stoich_coeffs,
+        vk,
+        vk_rev,
+        vk_sum,
+        efficiency_coeffs_tB,
+        efficiency_coeffs_fO,
+        Arrhenius_0,
+        troe,
+        index_rev_start,
+        index_three_body_start,
+        index_fallOff_start,
+        index_troe_start,
+    )
+
+end

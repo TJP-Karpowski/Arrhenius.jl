@@ -1,5 +1,5 @@
 "compute reaction source term `dC/dt`"
-function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
+function wdot_func(reaction, T, C,s0_R,h_RT)
 
     @inbounds _kf = @. @view(reaction.Arrhenius_coeffs[:, 1]) * exp(
         @view(reaction.Arrhenius_coeffs[:, 2]) * log(T) -
@@ -35,8 +35,8 @@ function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
         end
     end
 
-    @inbounds ΔS_R = reaction.vk' * S0 / R
-    @inbounds ΔH_RT = reaction.vk' * h_mole / (R * T)
+    @inbounds ΔS_R = reaction.vk' * s0_R
+    @inbounds ΔH_RT = reaction.vk' * h_RT
     @inbounds Keq =
         @. exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * reaction.vk_sum)
     @inbounds _kr = @. _kf / Keq * reaction.is_reversible
@@ -57,6 +57,6 @@ function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
     #if get_qdot
     #    return _kf - _kr
     #end
-    return reaction.vk * (_kf - _kr)
+    return reaction.vk * (_kf - _kr) #omega_dot_k
 end
 export wdot_func
