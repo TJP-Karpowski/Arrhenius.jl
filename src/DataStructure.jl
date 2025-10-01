@@ -60,3 +60,25 @@ struct Solution{Ty<:Thermo,kinTy<:Kinetics}
     trans::Transport
     kinetics::kinTy
 end
+
+### Isobaric Reactor struct to retain variables for ODE function without allocation overhead
+mutable struct isobaricReactor{vecT<:AbstractVector,arrayT<:AbstractArray,typ<:Real,Sol<:Arrhenius.Solution} <: Function
+    gas::Sol
+    nasa_poly::arrayT
+    T::typ 
+    p::typ
+    X::vecT
+    C::vecT
+    h_RT::vecT
+    s0_R::vecT
+    g_RT::vecT
+    cp_R::vecT
+    kr::vecT
+    kf::vecT
+    enthalpy_T_poly::vecT
+    entropy_T_poly::vecT
+    cp_T_poly::vecT
+    ρ_mass::typ
+    mean_MW::typ
+    cp_mass::typ
+end

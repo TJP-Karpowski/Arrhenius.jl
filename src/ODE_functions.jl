@@ -37,3 +37,226 @@ function isochoric!(du, u, p, t, gas)
 end
 
 export isobaric!, isochoric!
+
+
+
+
+### The following functions are optimized versions of the above isobaric! function
+### that retain memory allocations within a mutable struct
+### to avoid overhead of allocations within the ODE function call   
+
+"""
+    isobaricReactor(gas)
+Create an isobaric reactor struct to be used as an ODE function with the given gas object
+"""
+function isobaricReactor(gas) 
+return isobaricReactor(
+    gas,
+    zeros(gas.n_species,7),
+    300.0,
+    101325.0,
+    zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_species),
+    zeros(gas.n_reactions),
+    zeros(gas.n_reactions),
+    zeros(6),
+    zeros(6),
+    zeros(5),
+    0.0,
+    0.0,0.0)
+end
+
+"""
+    cal_h_RT!(state::isobaricReactor,T,p)
+
+    Calculates the dimensionless enthalpy h/RT and stores it in state.h_RT
+    using the NASA polynomial coefficients stored in state.nasa_poly
+"""
+ function cal_h_RT!(state::isobaricReactor,T,p)
+    state.enthalpy_T_poly[1] = 1.0
+    state.enthalpy_T_poly[2] = T/2
+    state.enthalpy_T_poly[3] = T^2/3.
+    state.enthalpy_T_poly[4] = T^3/4.
+    state.enthalpy_T_poly[5] = T^4/5.
+    state.enthalpy_T_poly[6] = 1/T
+    
+        #poly = selectPoly(thermo,T,1:6)
+    #h_mole = poly * enthalpy_T_poly
+
+  #state.h_RT .= @view(state.nasa_poly[:,1:6]) * state.enthalpy_T_poly
+    h_RT_kernel!(state.h_RT,state.nasa_poly,state.enthalpy_T_poly)
+    
+
+    return nothing
+end
+"""
+    h_RT_kernel!(h_RT,nasa_poly,enthalpy_T_poly)
+
+    Helper Kernel to calculate h/RT from NASA polynomial coefficients and enthalpy temperature polynomial terms.
+    Kernel to avoid allocations.
+
+"""
+function h_RT_kernel!(h_RT,nasa_poly,enthalpy_T_poly)
+    h_RT .=0.
+    for j in 1:6
+        for i in 1:length(h_RT)
+            h_RT[i] += nasa_poly[i,j] * enthalpy_T_poly[j]
+        end
+    end
+end
+
+
+"""
+    cal_s0_R!(state::isobaricReactor,T,p)
+
+calculates the dimensionless entropy s/R and stores it in state.s0_R
+using the NASA polynomial coefficients stored in state.nasa_poly.
+"""
+function cal_s0_R!(state::isobaricReactor,T,p)
+    state.entropy_T_poly[1] = log(T)
+    state.entropy_T_poly[2] = T
+    state.entropy_T_poly[3] = T^2/2.
+    state.entropy_T_poly[4] = T^3/3.
+    state.entropy_T_poly[5] = T^4/4.
+    state.entropy_T_poly[6] = 1
+
+    s0_R_kernel!(state.s0_R,state.nasa_poly,state.entropy_T_poly)
+    
+
+    return nothing
+end
+
+"""
+    s0_R_kernel!(s0_R,nasa_poly,entropy_T_poly)
+
+    Helper Kernel to calculate s/R from NASA polynomial coefficients and entropy temperature polynomial terms.
+    Kernel to avoid allocations.
+
+"""
+function s0_R_kernel!(s0_R,nasa_poly,entropy_T_poly)
+    s0_R .=0.
+    for j in 1:5
+        for i in 1:length(s0_R)
+            s0_R[i] += nasa_poly[i,j] * entropy_T_poly[j]
+        end
+    end
+    for i in 1:length(s0_R)
+        s0_R[i] += nasa_poly[i,7] * entropy_T_poly[6]
+    end
+end
+
+"""
+    cal_cpmass_mean!(state::isobaricReactor,T,p)
+
+    Calculates the mean mass-based specific heat capacity cp_mass and stores it in state.cp_mass
+    using the NASA polynomial coefficients stored in state.nasa_poly
+"""
+function cal_cpmass_mean!(state::isobaricReactor,T,p)
+    state.cp_T_poly[1] = 1.0
+    state.cp_T_poly[2] = T
+    state.cp_T_poly[3] = T^2
+    state.cp_T_poly[4] = T^3
+    state.cp_T_poly[5] = T^4
+    cp_R_kernel!(state.cp_R,state.nasa_poly,state.cp_T_poly)
+    state.cp_mass *= 0.0
+    for i in 1:state.gas.n_species
+        state.cp_mass += state.cp_R[i] * state.X[i]
+    end
+    state.cp_mass *= Arrhenius.R / state.mean_MW
+
+    #state.cp_R .= @view(state.nasa_poly[:,1:5]) * state.cp_T_poly
+    #state.cp_mass = dot(state.X,state.cp_R ) * Arrhenius.R / state.mean_MW
+
+    return nothing
+end
+
+"""
+    cp_R_kernel!(cp_R,nasa_poly,cp_T_poly)
+
+    Helper Kernel to calculate cp/R from NASA polynomial coefficients and cp temperature polynomial terms.
+    Kernel to avoid allocations.
+
+"""
+function cp_R_kernel!(cp_R,nasa_poly,cp_T_poly)
+    cp_R .=0.
+    for j in 1:5
+        for i in 1:length(cp_R)
+            cp_R[i] += nasa_poly[i,j] * cp_T_poly[j]
+        end
+    end
+end
+
+"""
+    cal_nasa_poly!(state::isobaricReactor,T,p)
+
+    Helper function to make call easier
+"""
+function cal_nasa_poly!(state::isobaricReactor,T,p)
+    cal_nasa_poly!(state.nasa_poly,state.gas.thermo.nasa_low,state.gas.thermo.nasa_high,T,p)
+    return nothing
+end
+
+"""
+    cal_nasa_poly!(nasa_poly,nasa_low,nasa_high,T,p)
+
+    Calculates the NASA polynomial coefficients for all species at temperature T and pressure p
+    and stores them in nasa_poly. 
+"""
+function cal_nasa_poly!(nasa_poly,nasa_low,nasa_high,T,p)
+    #ramp_low = (1-(0.5 * tanh(T-1000) + 0.5))
+    ramp_high =  (0.5 * tanh(T-1000) + 0.5)
+    nasa_poly .= T<=1000 ? nasa_low : nasa_high
+    return nothing
+end
+
+"""
+    calc_meanMW(Y,MW)
+
+    Calculates the mean molecular weight from mass fractions Y and molecular weights MW
+"""
+function calc_meanMW(Y::AbstractVector,MW::AbstractVector)
+    out = 0.0
+    for i in 1:length(Y)
+        out += Y[i] /MW[i]
+    end
+    return 1/out
+end
+
+"""
+    (state::isobaricReactor)(du, u, p, t)
+
+    ODE function call for isobaric reactor using the state stored in the isobaricReactor struct
+"""
+function (state::isobaricReactor)(du, u, p, t)
+    state.p = p[1]
+    state.T = u[end]
+    Y = @view(u[1:state.gas.n_species])
+
+    state.mean_MW = calc_meanMW(Y,state.gas.MW) 
+    state.ρ_mass = state.p / R / state.T * state.mean_MW
+    @. state.X = Y / state.gas.MW * state.mean_MW 
+    @. state.C = state.X * state.ρ_mass / state.mean_MW
+    cal_nasa_poly!(state,state.T,state.p)
+    cal_cpmass_mean!(state,state.T,state.p)
+    cal_h_RT!(state,state.T,state.p)
+    cal_s0_R!(state,state.T,state.p)
+    @. state.g_RT = state.h_RT - state.s0_R
+    wdot_func!(@view(du[1:end-1]),state.kf,state.kr,state.C,state.g_RT,state.gas.kinetics,state.T)    
+    du[end] *= 0.0
+    @inbounds for i in 1:state.gas.n_species
+        du[end] -= state.h_RT[i] * du[i] 
+    end
+    du[end] *= Arrhenius.R * state.T
+    du[end] /= state.cp_mass
+    @inbounds for i in 1:state.gas.n_species
+        du[i] *= state.gas.MW[i]
+    end
+    du ./= state.ρ_mass
+    return nothing
+end
+
+export isobaricReactor
