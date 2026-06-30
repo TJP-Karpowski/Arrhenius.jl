@@ -1,10 +1,12 @@
 [deps]
 Arrhenius = "d1b5debe-99ef-4a51-88bd-55361cc46b8b"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 
 [sources]
 Arrhenius = {path = ".."}
 
 [compat]
+ForwardDiff = "0.10"
 OrdinaryDiffEq = "6"
 julia = "1"

@@ -5,6 +5,7 @@ Pkg.instantiate()
 
 using Arrhenius
 using Dates
+using ForwardDiff
 using LinearAlgebra
 using OrdinaryDiffEq
 using Printf
@@ -67,17 +68,55 @@ function sample!(f; samples::Int)
     )
 end
 
-function build_problem(case)
+function typed_reactor(gas, ::Type{T}) where {T}
+    return Arrhenius.isobaricReactor(
+        gas,
+        zeros(T, gas.n_species, 7),
+        T(300),
+        T(101325),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_species),
+        zeros(T, gas.n_reactions),
+        zeros(T, gas.n_reactions),
+        zeros(T, 6),
+        zeros(T, 6),
+        zeros(T, 5),
+        zero(T),
+        zero(T),
+        zero(T),
+    )
+end
+
+function reactor_rhs(gas, u, p, t)
+    state = typed_reactor(gas, eltype(u))
+    du = similar(u)
+    state(du, u, p, t)
+    return du
+end
+
+function forwarddiff_jacobian!(J, gas, u, p, t)
+    J .= ForwardDiff.jacobian(x -> reactor_rhs(gas, x, p, t), u)
+    return nothing
+end
+
+function build_problem(case; with_jacobian = false)
     gas = CreateSolution(case.mechanism)
     state = isobaricReactor(gas)
     Y0 = mass_fractions(gas, case.composition)
     u0 = vcat(Y0, case.temperature)
     tspan = (0.0, case.t_end)
+    if with_jacobian
+        f = ODEFunction(state; jac = (J, u, p, t) -> forwarddiff_jacobian!(J, gas, u, p, t))
+        return gas, ODEProblem(f, u0, tspan, (case.pressure,))
+    end
     return gas, ODEProblem(state, u0, tspan, (case.pressure,))
 end
 
-function benchmark_case(case; samples)
-    gas, prob = build_problem(case)
+function benchmark_problem(gas, prob, case, label; samples)
 
     # One warmup solve compiles the solver path and checks that the case is valid.
     solve(prob, Rosenbrock23(autodiff=false);
@@ -98,12 +137,36 @@ function benchmark_case(case; samples)
         mechanism = case.name,
         species = gas.n_species,
         reactions = gas.n_reactions,
-        solver = "Rosenbrock23(autodiff=false)",
+        solver = label,
         t_end = case.t_end,
         reltol = 1.0e-6,
         abstol = 1.0e-9,
         stats...,
     )
+end
+
+function benchmark_case(case; samples)
+    rows = NamedTuple[]
+
+    gas, prob = build_problem(case; with_jacobian = false)
+    push!(rows, benchmark_problem(
+        gas,
+        prob,
+        case,
+        "Rosenbrock23(autodiff=false)",
+        samples = samples,
+    ))
+
+    gas_jac, prob_jac = build_problem(case; with_jacobian = true)
+    push!(rows, benchmark_problem(
+        gas_jac,
+        prob_jac,
+        case,
+        "Rosenbrock23(autodiff=false, jac=ForwardDiff)",
+        samples = samples,
+    ))
+
+    return rows
 end
 
 function write_csv(path, rows)
@@ -138,16 +201,17 @@ function write_markdown(path, rows; samples)
         println(io, "- Timestamp: $(Dates.format(now(), dateformat"yyyy-mm-dd HH:MM:SS"))")
         println(io, "- Julia: $(VERSION)")
         println(io, "- Samples: $samples")
-        println(io, "- Solver: `Rosenbrock23(autodiff=false)`")
+        println(io, "- Solver variants: `Rosenbrock23(autodiff=false)` with and without a supplied ForwardDiff Jacobian")
         println(io, "- Tolerances: `reltol=1e-6`, `abstol=1e-9`")
         println(io, "- Save policy: `save_everystep=false`")
         println(io)
-        println(io, "| Case | Species | Reactions | t_end | Median solve | Median alloc |")
-        println(io, "|---|---:|---:|---:|---:|---:|")
+        println(io, "| Case | Solver | Species | Reactions | t_end | Median solve | Median alloc |")
+        println(io, "|---|---|---:|---:|---:|---:|---:|")
         for row in rows
             time_ms = row.median_ns / 1_000_000
-            @printf(io, "| %s | %d | %d | %.3e | %.3f ms | %d B |\n",
+            @printf(io, "| %s | `%s` | %d | %d | %.3e | %.3f ms | %d B |\n",
                 row.mechanism,
+                row.solver,
                 row.species,
                 row.reactions,
                 row.t_end,
@@ -164,7 +228,7 @@ function main()
     rows = NamedTuple[]
     for case in CASES
         println("Benchmarking $(case.name)")
-        push!(rows, benchmark_case(case; samples=samples))
+        append!(rows, benchmark_case(case; samples=samples))
     end
 
     mkpath(joinpath(@__DIR__, "results"))

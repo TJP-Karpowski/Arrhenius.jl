@@ -1,0 +1,7 @@
+timestamp,julia_version,mechanism,species,reactions,solver,t_end,reltol,abstol,min_ns,median_ns,mean_ns,max_ns,alloc_bytes
+2026-06-30T14:04:55,1.12.1,h2o2_hydrogen_air,9,28,Rosenbrock23(autodiff=false),0.001,1.0e-6,1.0e-9,27200166,27682125,27627017,28001625,12960
+2026-06-30T14:04:55,1.12.1,h2o2_hydrogen_air,9,28,Rosenbrock23(autodiff=false, jac=ForwardDiff),0.001,1.0e-6,1.0e-9,21999833,22702125,22924175,24483750,39669248
+2026-06-30T14:04:55,1.12.1,h2_li_2004_hydrogen_air,9,21,Rosenbrock23(autodiff=false),0.001,1.0e-6,1.0e-9,10156917,10211916,10389250,10700416,12960
+2026-06-30T14:04:55,1.12.1,h2_li_2004_hydrogen_air,9,21,Rosenbrock23(autodiff=false, jac=ForwardDiff),0.001,1.0e-6,1.0e-9,7399417,7527291,7599350,7842792,15863200
+2026-06-30T14:04:55,1.12.1,gri30_methane_air,53,325,Rosenbrock23(autodiff=false),0.002,1.0e-6,1.0e-9,449964667,464960791,459913933,465976833,1191584
+2026-06-30T14:04:55,1.12.1,gri30_methane_air,53,325,Rosenbrock23(autodiff=false, jac=ForwardDiff),0.002,1.0e-6,1.0e-9,260239917,260720458,263736300,274121792,737437248
