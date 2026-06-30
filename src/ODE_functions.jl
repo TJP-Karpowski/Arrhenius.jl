@@ -226,16 +226,15 @@ function calc_meanMW(Y::AbstractVector,MW::AbstractVector)
     return 1/out
 end
 
-"""
-    (state::isobaricReactor)(du, u, p, t)
 
-    ODE function call for isobaric reactor using the state stored in the isobaricReactor struct
 """
-function (state::isobaricReactor)(du, u, p, t)
-    state.p = p[1]
-    state.T = u[end]
-    Y = @view(u[1:state.gas.n_species])
+    updateReactor!(sate::Reactor,Y::AbstractVector,T::Real,p::Real)
 
+    updates the state Object based on the provided Y (mass-fraction), T (temperature) and p, (pressure)
+"""
+function updateReactor!(state::isobaricReactor,Y::AbstractVector,T::Real,p::Real)
+    state.p = p
+    state.T = T
     state.mean_MW = calc_meanMW(Y,state.gas.MW) 
     state.ρ_mass = state.p / R / state.T * state.mean_MW
     @. state.X = Y / state.gas.MW * state.mean_MW 
@@ -245,8 +244,23 @@ function (state::isobaricReactor)(du, u, p, t)
     cal_h_RT!(state,state.T,state.p)
     cal_s0_R!(state,state.T,state.p)
     @. state.g_RT = state.h_RT - state.s0_R
+    return nothing
+end
+
+
+
+"""
+    (state::isobaricReactor)(du, u, p, t)
+
+    ODE function call for isobaric reactor using the state stored in the isobaricReactor struct
+"""
+function (state::isobaricReactor)(du, u, p, t)
+
+    Y = @view(u[1:state.gas.n_species])
+
+    updateReactor!(state,Y,u[end],p[1])
     wdot_func!(@view(du[1:end-1]),state.kf,state.kr,state.C,state.g_RT,state.gas.kinetics,state.T)    
-    du[end] *= 0.0
+    du[end] = 0.0
     @inbounds for i in 1:state.gas.n_species
         du[end] -= state.h_RT[i] * du[i] 
     end
@@ -259,4 +273,5 @@ function (state::isobaricReactor)(du, u, p, t)
     return nothing
 end
 
-export isobaricReactor
+
+export isobaricReactor, updateReactor!

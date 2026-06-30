@@ -1,0 +1,61 @@
+description: |-
+  Generated from file chem.inp
+  by ck2cti on Fri Nov 14 11:44:30 2014
+
+  Transport data from file tran.dat.
+
+generator: cti2yaml
+cantera-version: 2.6.0
+date: Sat, 04 Nov 2023 10:04:41 +0100
+input-files: [h2_elte.cti]
+
+units: {length: cm, quantity: mol, activation-energy: K}
+
+phases:
+- name: gas
+  thermo: ideal-gas
+  elements: [N, He]
+  species: [ N2, HE]
+  kinetics: gas
+  reactions: all
+  transport: mixture-averaged
+  state:
+    T: 300.0
+    P: 1.01325e+05
+
+species:
+- name: N2
+  composition: {N: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [3.53100528, -1.23660988e-04, -5.02999433e-07, 2.43530612e-09, -1.40881235e-12,
+      -1046.97628, 2.96747038]
+    - [2.95257637, 1.3969004e-03, -4.92631603e-07, 7.86010195e-11, -4.60755204e-15,
+      -923.948688, 5.87188762]
+  transport:
+    model: gas
+    geometry: linear
+    diameter: 3.621
+    well-depth: 97.53
+    polarizability: 1.76
+    rotational-relaxation: 4
+- name: HE
+  composition: {He: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 0.928723974]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 0.928723974]
+  transport:
+    model: gas
+    geometry: atom
+    diameter: 2.576
+    well-depth: 10.2
+
+
+reactions:
+- equation: He + N2 <=> He + N2  # Reaction 1
+  rate-constant: {A: 9.7676e+12, b: 0.284939, Ea: 7222.5}

@@ -1,21 +1,17 @@
-cd("/Users/jkarpowski/source-work/Arrhenius/development/")
+#cd("/Users/jkarpowski/source-work/Arrhenius/development/")
 using Pkg
-Pkg.activate(".")
+#Pkg.activate(".")
 using LinearAlgebra
 using DifferentialEquations
-using ForwardDiff
+#using ForwardDiff
 #using DiffEqSensitivity
+using CairoMakie
 using Sundials
-using Plots
 using BenchmarkTools
 #using PProf
-using ModelingToolkit
+#using ModelingToolkit
 using Revise
 using Arrhenius
-
-
-
-
 
 #@register Arrhenius.selectPoly(thermo, T,range)
 
@@ -41,192 +37,6 @@ Y0 = X2Y(gas_H2, X0, dot(X0, gas_H2.MW));
 # Y0 = ones(ns) ./ns
 u0 = vcat(Y0, T0)
 du0 = zeros(length(u0))
-
-mutable struct isobaricReactor{vecT<:AbstractVector,arrayT<:AbstractArray,typ<:Real,Sol<:Arrhenius.Solution} <: Function
-    gas::Sol
-    nasa_poly::arrayT
-    T::typ 
-    p::typ
-    X::vecT
-    C::vecT
-    h_RT::vecT
-    s0_R::vecT
-    g_RT::vecT
-    cp_R::vecT
-    kr::vecT
-    kf::vecT
-    enthalpy_T_poly::vecT
-    entropy_T_poly::vecT
-    cp_T_poly::vecT
-    ρ_mass::typ
-    mean_MW::typ
-    cp_mass::typ
-   
-end
-
-function isobaricReactor(gas) 
-return isobaricReactor(
-    gas,
-    zeros(gas.n_species,7),
-    300.0,
-    101325.0,
-    zeros(gas.n_species),
-    zeros(gas.n_species),
-    zeros(gas.n_species),
-    zeros(gas.n_species),
-    zeros(gas.n_species),
-    zeros(gas.n_species),
-    zeros(gas.n_reactions),
-    zeros(gas.n_reactions),
-    zeros(6),
-    zeros(6),
-    zeros(5),
-    0.0,
-    0.0,0.0)
-end
-
-
-@inbounds function cal_h_RT!(state::isobaricReactor,T,p)
-    state.enthalpy_T_poly[1] = 1.0
-    state.enthalpy_T_poly[2] = T/2
-    state.enthalpy_T_poly[3] = T^2/3.
-    state.enthalpy_T_poly[4] = T^3/4.
-    state.enthalpy_T_poly[5] = T^4/5.
-    state.enthalpy_T_poly[6] = 1/T
-    
-        #poly = selectPoly(thermo,T,1:6)
-    #h_mole = poly * enthalpy_T_poly
-
-  #state.h_RT .= @view(state.nasa_poly[:,1:6]) * state.enthalpy_T_poly
-    h_RT_kernel!(state.h_RT,state.nasa_poly,state.enthalpy_T_poly)
-    
-
-    return nothing
-end
-
-@inbounds function h_RT_kernel!(h_RT,nasa_poly,enthalpy_T_poly)
-    h_RT .=0.
-    for j in 1:6
-        for i in 1:length(h_RT)
-            h_RT[i] += nasa_poly[i,j] * enthalpy_T_poly[j]
-        end
-    end
-end
-
-
-function cal_s0_R!(state::isobaricReactor,T,p)
-    state.entropy_T_poly[1] = log(T)
-    state.entropy_T_poly[2] = T
-    state.entropy_T_poly[3] = T^2/2.
-    state.entropy_T_poly[4] = T^3/3.
-    state.entropy_T_poly[5] = T^4/4.
-    state.entropy_T_poly[6] = 1
-
-    s0_R_kernel!(state.s0_R,state.nasa_poly,state.entropy_T_poly)
-    
-
-    return nothing
-end
-
-@inbounds function s0_R_kernel!(s0_R,nasa_poly,entropy_T_poly)
-    s0_R .=0.
-    for j in 1:5
-        for i in 1:length(s0_R)
-            s0_R[i] += nasa_poly[i,j] * entropy_T_poly[j]
-        end
-    end
-    for i in 1:length(s0_R)
-        s0_R[i] += nasa_poly[i,7] * entropy_T_poly[6]
-    end
-end
-
-@inbounds function cal_cpmass_mean!(state::isobaricReactor,T,p)
-    state.cp_T_poly[1] = 1.0
-    state.cp_T_poly[2] = T
-    state.cp_T_poly[3] = T^2
-    state.cp_T_poly[4] = T^3
-    state.cp_T_poly[5] = T^4
-    cp_R_kernel!(state.cp_R,state.nasa_poly,state.cp_T_poly)
-    state.cp_mass *= 0.0
-    for i in 1:state.gas.n_species
-        state.cp_mass += state.cp_R[i] * state.X[i]
-    end
-    state.cp_mass *= Arrhenius.R / state.mean_MW
-
-    #state.cp_R .= @view(state.nasa_poly[:,1:5]) * state.cp_T_poly
-    #state.cp_mass = dot(state.X,state.cp_R ) * Arrhenius.R / state.mean_MW
-
-    return nothing
-end
-
-@inbounds function cp_R_kernel!(cp_R,nasa_poly,cp_T_poly)
-    cp_R .=0.
-    for j in 1:5
-        for i in 1:length(cp_R)
-            cp_R[i] += nasa_poly[i,j] * cp_T_poly[j]
-        end
-    end
-end
-
-
-function cal_nasa_poly!(state::isobaricReactor,T,p)
-    cal_nasa_poly!(state.nasa_poly,state.gas.thermo.nasa_low,state.gas.thermo.nasa_high,T,p)
-    return nothing
-end
-
-@inbounds function cal_nasa_poly!(nasa_poly,nasa_low,nasa_high,T,p)
-    ramp_low = (1-(0.5 * tanh(T-1000) + 0.5))
-    ramp_high =  (0.5 * tanh(T-1000) + 0.5)
-      @. nasa_poly = ramp_low *  nasa_low + ramp_high * nasa_high
-    return nothing
-end
-
-function calc_meanMW(Y::AbstractVector,MW::AbstractVector)
-    out = 0.0
-    for i in 1:length(Y)
-        out += Y[i] /MW[i]
-    end
-    return 1/out
-end
-
-
-@inbounds function (state::isobaricReactor)(du, u, p, t)
-    state.p = p[1]
-    state.T = u[end]
-    Y = @view(u[1:state.gas.n_species])
-
-    state.mean_MW = calc_meanMW(Y,state.gas.MW) 
-    state.ρ_mass = state.p / R / state.T * state.mean_MW
-    @. state.X = Y / state.gas.MW * state.mean_MW 
-    @. state.C = state.X * state.ρ_mass / state.mean_MW
-    cal_nasa_poly!(state,state.T,state.p)
-    cal_cpmass_mean!(state,state.T,state.p)
-    #(state.cp_mass-cal_cpmass_mean(state.gas,state.T,state.p,state.X))
-    #state.cp_mass = cal_cpmass_mean(state.gas,state.T,state.p,state.X)
-    #state.h_RT = cal_h_RT(state.gas,state.T,state.p,state.X)
-    #state.s0_R = cal_s0_R(state.gas,state.T,state.p,state.X)
-    cal_h_RT!(state,state.T,state.p)
-    cal_s0_R!(state,state.T,state.p)
-    @. state.g_RT = state.h_RT - state.s0_R
-    wdot_func!(@view(du[1:end-1]),state.kf,state.kr,state.C,state.g_RT,state.gas.kinetics,state.T) 
-    #calc_omegaY!( @view(du[1:end-1]),state.gas, state.T, state.C, state.s0_R, state.h_RT,state.ρ_mass) 
-    #du[1:end-1] .= wdot_func(state.gas.kinetics, state.T, state.C, state.s0_R * Arrhenius.R, state.h_RT * Arrhenius.R * state.T )
-   
-    du[end] *= 0.0
-    @inbounds for i in 1:state.gas.n_species
-        du[end] -= state.h_RT[i] * du[i] 
-    end
-    du[end] *= Arrhenius.R * state.T
-    du[end] /= state.cp_mass
-    @inbounds for i in 1:state.gas.n_species
-        du[i] *= state.gas.MW[i]
-    end
-    du ./= state.ρ_mass
-    return nothing
-end
-
-
-
 functordu! = isobaricReactor(gas_H2)
 
 
@@ -237,10 +47,8 @@ prob = ODEProblem(functordu!, u0, tspan, [P]);
 #dudt!(du, u, p, t)=dudt!(du, u, p, t, gas_H2_old)
 #probOld = ODEProblem(dudt!, u0, tspan, [P]);
 
-sys = modelingtoolkitize(prob)
+#sys = modelingtoolkitize(prob)
 #prob_jac = ODEProblem(sys,[],tspan ,sparse=true,jac=true) #jac=true
-u0 = vcat(Y0, T0)
-du0 = zeros(gas_H2.n_species+1)
 #dudt!(du0, u0, [P],0)
 
 println("Just the call:")
@@ -267,20 +75,39 @@ println("Rosenbrock23 (no Autodiff):")
 #@btime sol = solve(prob, Rodas3(),  reltol = 1e-6, abstol = 1e-9)  seconds = 5
 
 sol = solve(prob, CVODE_BDF(),dtmax=1e-4,dt=1e-8,reltol = 1e-6, abstol = 1e-9,alg_hints = [:stiff])
-plt = plot(
-    sol.t ,
-    sol[species_index(gas_H2, "H2"), :],
-    lw = 2,
-    label = "Arrhenius.jl",
-);
-ylabel!(plt, "Mass Fraction of H")
-xlabel!(plt, "Time [s]")
-pltT = plot(sol.t , sol[end, :], lw = 2, label = "Arrhenius.jl");
-ylabel!(pltT, "Temperature [K]")
-xlabel!(pltT, "Time [s]")
-title!(plt, "GRI30 CH4 Ignition @980K/15atm")
-pltsum = plot(plt, pltT, xscale = :identity, legend = :left, framestyle = :box)
-display(pltsum)
+
 
 #@pprof dudt!(du0, u0, [],0)
 #"profile.pb.gz"
+fig = Figure(size = (900, 400))
+
+# Left plot: species mass fraction
+ax1 = Axis(fig[1, 1];
+    xlabel = "Time [s]",
+    ylabel = "Mass Fraction of H",
+    title  = "GRI30 CH4 Ignition @980K/15atm",
+)
+
+lines!(ax1, sol.t, sol[species_index(gas_H2, "H2"), :];
+    linewidth = 2, label = "Arrhenius.jl"
+)
+axislegend(ax1, position = :lt)  # legend = :left/top
+
+# Right plot: temperature
+ax2 = Axis(fig[1, 2];
+    xlabel = "Time [s]",
+    ylabel = "Temperature [K]",
+)
+
+lines!(ax2, sol.t, sol[end, :];
+    linewidth = 2, label = "Arrhenius.jl"
+)
+axislegend(ax2, position = :lt)
+
+# Boxed frame look (similar to framestyle = :box)
+ax1.spinewidth = 1
+ax2.spinewidth = 1
+hidedecorations!(ax1, grid = false)  # keep ticks/labels; grid off by default
+hidedecorations!(ax2, grid = false)
+
+display(fig)

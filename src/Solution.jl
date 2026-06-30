@@ -43,51 +43,27 @@ function CreateSolution(mech; reorderReactions = true)
         constructorThermo = Symbol(yaml["phases"][1]["thermo"], :Thermo)
         thermo = @eval($constructorThermo)(yaml)
     end
-
-
+    MW = build_MW_from_yaml(yaml, species_names)
+    
     #### Kinetic data
-
-    npz = npzread("$mech.npz")
-    MW = npz["molecular_weights"]
-    efficiencies_coeffs_full = npz["efficiencies_coeffs"]
-    product_stoich_coeffs = sparse(npz["product_stoich_coeffs"])
-    reactant_stoich_coeffs = sparse(npz["reactant_stoich_coeffs"])
-    reactant_orders = sparse(npz["reactant_orders"])
-    is_reversible = npz["is_reversible"]
-    for (i,mech_reaction) in enumerate(yaml["reactions"])
-        #println("reaction $i: $(mech_reaction["equation"])")
-        if !haskey(mech_reaction, "type") 
-            if occursin("<=>",mech_reaction["equation"])
-                is_reversible[i]=true
-            end
-        else
-            is_reversible[i]=true
-        end
-    end
-    Arrhenius_coeffs = npz["Arrhenius_coeffs"]
-    if haskey(npz, "Arrhenius_A0")
-        Arrhenius_A0 = npz["Arrhenius_A0"]
-        Arrhenius_b0 = npz["Arrhenius_b0"]
-        Arrhenius_Ea0 = npz["Arrhenius_Ea0"]
-    else
-        Arrhenius_A0 = []
-        Arrhenius_b0 = []
-        Arrhenius_Ea0 = []
-    end
-
-    if haskey(npz, "Troe_A")
-        Troe_A = npz["Troe_A"]
-        Troe_T1 = npz["Troe_T1"]
-        Troe_T2 = npz["Troe_T2"]
-        Troe_T3 = npz["Troe_T3"]
-    else
-        Troe_A = []
-        Troe_T1 = []
-        Troe_T2 = []
-        Troe_T3 = []
-    end
-    Arrhenius_0 = hcat(Arrhenius_A0, Arrhenius_b0, Arrhenius_Ea0)
-    Troe_ = hcat(Troe_A, Troe_T1, Troe_T2, Troe_T3)
+    #npz = npzread("$mech.npz")
+    #npz["molecular_weights"]
+    #println(MW-npz["molecular_weights"])
+    # efficiencies_coeffs_full = npz["efficiencies_coeffs"]
+    # product_stoich_coeffs = sparse(npz["product_stoich_coeffs"])
+    # reactant_stoich_coeffs = sparse(npz["reactant_stoich_coeffs"])
+    # reactant_orders = sparse(npz["reactant_orders"])
+    # is_reversible = npz["is_reversible"]
+    
+    kin = build_kinetic_data_from_yaml(yaml, species_names)
+    reactant_stoich_coeffs   = kin.reactant_stoich_coeffs
+    product_stoich_coeffs  =  kin.product_stoich_coeffs
+    reactant_orders         =  kin.reactant_orders
+    efficiencies_coeffs_full = kin.efficiencies_coeffs_full
+    Arrhenius_coeffs = kin.Arrhenius_coeffs
+    Arrhenius_0      = kin.Arrhenius_0
+    is_reversible    = kin.is_reversible
+    Troe_ =  kin.Troe_
 
     index_three_body = []
     index_falloff = []
@@ -152,7 +128,7 @@ function CreateSolution(mech; reorderReactions = true)
     end
     #### Transport data
 
-    if haskey(npz, "species_viscosities_poly")
+    if false#haskey(npz, "species_viscosities_poly")
         species_viscosities_poly = npz["species_viscosities_poly"]
         thermal_conductivity_poly = npz["thermal_conductivity_poly"]
         binary_diff_coeffs_poly = npz["binary_diff_coeffs_poly"]

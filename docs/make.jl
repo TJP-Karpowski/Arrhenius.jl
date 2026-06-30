@@ -23,7 +23,7 @@ makedocs(
     ],
 )
 
-deploydocs(;
-    repo="github.com/DENG-MIT/Arrhenius.jl",
-    devbranch="main"
-)
+#deploydocs(;
+#    repo="github.com/DENG-MIT/Arrhenius.jl",
+#    devbranch="main"
+#)
