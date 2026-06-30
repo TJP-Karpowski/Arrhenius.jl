@@ -1,17 +1,30 @@
-function read_species_basics(yaml)
-    n_species = length(yaml["phases"][1]["species"])
+function phase_index(yaml, phase)
+    phase isa Integer && return phase
+    for (i, item) in enumerate(yaml["phases"])
+        if get(item, "name", nothing) == phase
+            return i
+        end
+    end
+    error("Phase '$phase' not found")
+end
+
+function phase_data(yaml; phase = 1)
+    return yaml["phases"][phase_index(yaml, phase)]
+end
+
+function read_species_basics(yaml, phase = phase_data(yaml))
+    n_species = length(phase["species"])
     n_reactions = length(yaml["reactions"])
-    species_names = yaml["phases"][1]["species"]
-    elements = yaml["phases"][1]["elements"]
+    species_names = String.(strip.(phase["species"]))
+    elements = phase["elements"]
     n_elements = length(elements)
 
     ele_matrix = zeros(n_elements, n_species)
 
-    _species_names =
-        [yaml["species"][i]["name"] for i = 1:length(yaml["species"])]
+    species_by_name = species_dict_by_name(yaml["species"])
 
     for (i, species) in enumerate(species_names)
-        spec = yaml["species"][findfirst(x -> x == species, _species_names)]
+        spec = species_entry_from_lookup(species_by_name, species)
         for j = 1:n_elements
             if haskey(spec["composition"], elements[j])
                 ele_matrix[j, i] = spec["composition"][elements[j]]
@@ -21,53 +34,30 @@ function read_species_basics(yaml)
 
     return n_species, n_reactions, species_names, elements, n_elements, ele_matrix
 end
-"""
-    CreateSolution(mech)
-    
-Reaction mechanism is interepreted here. Part of the infomation are read in
-from the yaml file, pary of them are from the pre-processed .npz file from
-ReacTorch and Cantera
-test for math enviroment
-"""
-function CreateSolution(mech; reorderReactions = true)
-    yaml = YAML.load_file(mech)
 
-    #### Basics
-    n_species, n_reactions, species_names,
-    elements, n_elements, ele_matrix = read_species_basics(yaml)
-
-    #### Thermo
-    if yaml["phases"][1]["thermo"] == "ideal-gas" # switch to work with Cantera standard
-        thermo = IdealGasThermo(yaml)
-    else
-        constructorThermo = Symbol(yaml["phases"][1]["thermo"], :Thermo)
-        thermo = @eval($constructorThermo)(yaml)
+function build_thermo(yaml, phase)
+    if phase["thermo"] == "ideal-gas"
+        return IdealGasThermo(yaml, phase)
     end
-    MW = build_MW_from_yaml(yaml, species_names)
-    
-    #### Kinetic data
-    #npz = npzread("$mech.npz")
-    #npz["molecular_weights"]
-    #println(MW-npz["molecular_weights"])
-    # efficiencies_coeffs_full = npz["efficiencies_coeffs"]
-    # product_stoich_coeffs = sparse(npz["product_stoich_coeffs"])
-    # reactant_stoich_coeffs = sparse(npz["reactant_stoich_coeffs"])
-    # reactant_orders = sparse(npz["reactant_orders"])
-    # is_reversible = npz["is_reversible"]
-    
+    constructorThermo = Symbol(phase["thermo"], :Thermo)
+    return getfield(@__MODULE__, constructorThermo)(yaml)
+end
+
+function build_kinetics(yaml, species_names; reorderReactions = true)
+    n_reactions = length(yaml["reactions"])
     kin = build_kinetic_data_from_yaml(yaml, species_names)
-    reactant_stoich_coeffs   = kin.reactant_stoich_coeffs
-    product_stoich_coeffs  =  kin.product_stoich_coeffs
-    reactant_orders         =  kin.reactant_orders
+    reactant_stoich_coeffs = kin.reactant_stoich_coeffs
+    product_stoich_coeffs = kin.product_stoich_coeffs
+    reactant_orders = kin.reactant_orders
     efficiencies_coeffs_full = kin.efficiencies_coeffs_full
     Arrhenius_coeffs = kin.Arrhenius_coeffs
-    Arrhenius_0      = kin.Arrhenius_0
-    is_reversible    = kin.is_reversible
-    Troe_ =  kin.Troe_
+    Arrhenius_0 = kin.Arrhenius_0
+    is_reversible = kin.is_reversible
+    Troe_ = kin.Troe_
 
-    index_three_body = []
-    index_falloff = []
-    index_falloff_Troe = []
+    index_three_body = Int64[]
+    index_falloff = Int64[]
+    index_falloff_Troe = Int64[]
     j = 1
     for i = 1:n_reactions
         reaction = yaml["reactions"][i]
@@ -87,15 +77,15 @@ function CreateSolution(mech; reorderReactions = true)
         end
     end
 
-    i_reactant = []
-    i_product = []
+    i_reactant = Vector{Int64}[]
+    i_product = Vector{Int64}[]
     for i = 1:n_reactions
         push!(i_reactant, findall(reactant_orders[:, i] .> 0.01))
         push!(i_product, findall(product_stoich_coeffs[:, i] .> 0.01))
     end
 
     vk = sparse(product_stoich_coeffs - reactant_stoich_coeffs)
-    vk_sum = sum(vk, dims=1)[1, :]
+    vk_sum = sum(vk, dims = 1)[1, :]
 
     for i in 1:n_reactions
         if !((i in index_three_body) | (i in index_falloff))
@@ -103,7 +93,7 @@ function CreateSolution(mech; reorderReactions = true)
         end
     end
     efficiencies_coeffs = sparse(efficiencies_coeffs_full)
-    
+
     kinetics = StandardKinetics(
         product_stoich_coeffs,
         reactant_stoich_coeffs,
@@ -123,27 +113,42 @@ function CreateSolution(mech; reorderReactions = true)
         vk_sum,
     )
 
-    if reorderReactions 
-        kinetics = ReorderedKinetics(kinetics)
-    end
+    return reorderReactions ? ReorderedKinetics(kinetics) : kinetics
+end
+
+function build_transport(yaml, species_names, MW, thermo)
+    transport_data = build_transport_data_from_yaml(yaml, species_names, MW, thermo)
+    return Transport(
+        transport_data.poly_order,
+        transport_data.species_viscosities_poly,
+        transport_data.thermal_conductivity_poly,
+        transport_data.binary_diff_coeffs_poly,
+    )
+end
+
+"""
+    CreateSolution(mech)
+    
+Create a gas solution from a Cantera-style YAML mechanism.
+"""
+function CreateSolution(mech; reorderReactions = true, phase = 1, phase_index = nothing, phase_name = nothing)
+    yaml = YAML.load_file(mech)
+    selected_phase = phase_name === nothing ? (phase_index === nothing ? phase : phase_index) : phase_name
+    phase_yaml = phase_data(yaml; phase = selected_phase)
+
+    #### Basics
+    n_species, n_reactions, species_names,
+    elements, n_elements, ele_matrix = read_species_basics(yaml, phase_yaml)
+
+    #### Thermo
+    thermo = build_thermo(yaml, phase_yaml)
+    MW = build_MW_from_yaml(yaml, species_names)
+    
+    #### Kinetic data
+    kinetics = build_kinetics(yaml, species_names; reorderReactions = reorderReactions)
     #### Transport data
 
-    if false#haskey(npz, "species_viscosities_poly")
-        species_viscosities_poly = npz["species_viscosities_poly"]
-        thermal_conductivity_poly = npz["thermal_conductivity_poly"]
-        binary_diff_coeffs_poly = npz["binary_diff_coeffs_poly"]
-        poly_order = size(species_viscosities_poly)[1]
-    else
-        species_viscosities_poly = zeros(2, 2)
-        thermal_conductivity_poly = zeros(2, 2)
-        binary_diff_coeffs_poly = zeros(2, 2)
-        poly_order = 6
-    end
-
-    trans = Transport(poly_order,
-                      species_viscosities_poly, 
-                      thermal_conductivity_poly, 
-                      binary_diff_coeffs_poly)
+    trans = build_transport(yaml, species_names, MW, thermo)
 
     gas = Solution(
         n_species,

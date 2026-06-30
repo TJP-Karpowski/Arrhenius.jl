@@ -42,6 +42,32 @@ struct ReorderedKinetics{Ty<:AbstractArray,sTy<:AbstractArray,vTy<:AbstractVecto
     index_troe_start::Int64
 end
 
+struct PackedSparseColumns{vTy<:AbstractVector,iTy<:AbstractVector}
+    colptr::iTy
+    rowval::iTy
+    nzval::vTy
+    nrow::Int64
+    ncol::Int64
+end
+
+struct PackedKinetics{Ty<:AbstractArray,sTy<:PackedSparseColumns,vTy<:AbstractVector} <: Kinetics
+    arrhenius_coeffs::Ty
+    reactant_orders::sTy
+    product_stoich_coeffs::sTy
+    reactant_stoich_coeffs::sTy
+    vk::sTy
+    vk_rev::sTy
+    vk_sum::vTy
+    efficiency_coeffs_tB::sTy
+    efficiency_coeffs_fO::sTy
+    Arrhenius_0::Ty
+    troe::Ty
+    index_rev_start::Int64
+    index_three_body_start::Int64
+    index_fallOff_start::Int64
+    index_troe_start::Int64
+end
+
 struct Transport
     poly_order::Int64
     species_viscosities_poly::Array{Float64,2}

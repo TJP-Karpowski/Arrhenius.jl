@@ -1,6 +1,5 @@
 module Arrhenius
     using YAML
-    using NPZ
     using LinearAlgebra
     using SparseArrays
     #using Symbolics
@@ -12,6 +11,7 @@ module Arrhenius
     include("DataStructure.jl")
     #include("Reactions.jl")
     include("ReorderedKinetics.jl")
+    include("PackedKinetics.jl")
     include("parser.jl")
     include("Solution.jl")
     include("Magic.jl")

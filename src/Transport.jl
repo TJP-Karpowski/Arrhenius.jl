@@ -1,23 +1,36 @@
 """
     mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
 
-Compute the tranposrt properties of a mixture using mixture average formula
+Compute mixture-averaged transport properties for an ideal-gas mixture.
 
-> Equations Ref. https://personal.ems.psu.edu/~radovic/ChemKin_Theory_PaSR.pdf
-> Equations. 5-50/51/52 for viscosity and thermal conductivity
+Inputs:
+- `P`: pressure in Pa.
+- `T`: temperature in K.
+- `X`: species mole fractions ordered like `gas.species_names`.
+- `mean_MW`: mixture molecular weight in kg/kmol, equivalent to g/mol.
 
-Pure species viscosities [Pa-s]
+Returns `(η_mix, λ_mix, Dkm)`:
+- `η_mix`: mixture viscosity in Pa*s.
+- `λ_mix`: mixture thermal conductivity in W/(m*K).
+- `Dkm`: mixture-averaged species diffusion coefficients in m^2/s.
 
-Thermal conductivity. [W/m/K].
+The pure-species viscosity, pure-species thermal conductivity, and binary
+diffusion coefficients are evaluated from the log-temperature polynomial
+coefficients stored in `gas.trans`. Those coefficients are generated from the
+YAML species transport data when `CreateSolution` is called.
 
-> Equation 5-46 for diffusion
+The mixture viscosity uses the Wilke mixture rule, the conductivity uses the
+common mixture-averaged arithmetic/harmonic mean approximation, and `Dkm` uses
+the mixture-averaged diffusion expression for mass-averaged diffusive fluxes
+driven by mole-fraction gradients.
 
-Mixture-averaged diffusion coefficients [m^2/s] relating the mass-averaged diffusive fluxes 
-(with respect to the mass averaged velocity) to gradients in the species mole fractions.
-
-Test this module in _transport_test.jl
-
-See also implementations in ReacTorch
+References:
+- R. J. Kee, M. E. Coltrin, and P. Glarborg, *Chemically Reacting Flow*,
+  Wiley, 2003, mixture-averaged transport formulas.
+- P. D. Neufeld, A. R. Janzen, and R. A. Aziz, "Empirical Equations to
+  Calculate 16 of the Transport Collision Integrals Ω(l,s)* for the
+  Lennard-Jones (12-6) Potential", *Journal of Chemical Physics*, 1972,
+  collision-integral correlations used when constructing `gas.trans`.
 """
 function mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
 
@@ -49,6 +62,9 @@ function mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
     X_eps = clamp.(X, 1.e-12, Inf)
     D = reshape(trans_T' * gas.trans.binary_diff_coeffs_poly, 
                 gas.n_species, gas.n_species)
+    for i in 1:gas.n_species
+        D[i, i] = Inf
+    end
 
     XjWj = X_eps' * gas.MW .- X_eps .* gas.MW
 

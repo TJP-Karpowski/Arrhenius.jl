@@ -4,7 +4,6 @@ end
 
 module Arrhenius
     using YAML
-    using NPZ
     using LinearAlgebra
     using SparseArrays
 

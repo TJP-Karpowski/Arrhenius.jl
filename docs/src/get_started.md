@@ -59,12 +59,5 @@ w_dot = wdot_func(gas.reaction, T, C, S0, h_mole)
 
 Similar to Chemkin and Canetra, all calculations in Arrhenius.jl require an input file to describe the properties of the relevant phase(s) of mixture. We adopt the `YAML` format maintained in the Cantera community.
 
-> Currently, the package relies on [`Cantera`](https://github.com/Cantera/cantera) and [`ReacTorch`](https://github.com/DENG-MIT/reactorch) for interpreting the reaction mechanism. The kinetic info in the mechanism files are inpreprested and saved into a `.npz` file with the same name as the `.yaml` file. If you want to have a try, you don't need to install Cantera and ReacTorch, since there are already some pre-compiled reaction mechanisms under the folder of `mechanism`. 
-
-> Otherwise, you can install [`Cantera`](https://github.com/Cantera/cantera) and [`ReacTorch`](https://github.com/DENG-MIT/reactorch) to compile it using the python script `interpreter.py` under the folder of `mechanism`.
-
-> You can also ask for help in the discussion forum and our developers can compile the model for you.
-
-With Cantera and ReacTorch installed, you can use the following python command in your terminal to generate the `.npz` file.
-
-`python interpreter.py -i gri30.yaml`
+Arrhenius.jl parses thermodynamic, kinetic, and mixture-averaged transport data
+directly from Cantera-style YAML files.

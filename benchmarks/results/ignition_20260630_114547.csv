@@ -1,0 +1,4 @@
+timestamp,julia_version,mechanism,species,reactions,solver,t_end,reltol,abstol,min_ns,median_ns,mean_ns,max_ns,alloc_bytes
+2026-06-30T11:45:47,1.12.1,h2o2_hydrogen_air,9,28,Rosenbrock23(autodiff=false),0.001,1.0e-6,1.0e-9,26538417,27246792,27134009,27494500,12960
+2026-06-30T11:45:47,1.12.1,h2_li_2004_hydrogen_air,9,21,Rosenbrock23(autodiff=false),0.001,1.0e-6,1.0e-9,10383125,10465750,10502767,10747167,12960
+2026-06-30T11:45:47,1.12.1,gri30_methane_air,53,325,Rosenbrock23(autodiff=false),0.002,1.0e-6,1.0e-9,453738000,461338375,461443308,475627792,1191584

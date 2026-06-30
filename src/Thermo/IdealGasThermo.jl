@@ -22,19 +22,18 @@ Constructor for the idealGasThermo:
 
 yaml:: Dict of the input yaml file
 """
-function IdealGasThermo(yaml::AbstractDict)
+function IdealGasThermo(yaml::AbstractDict, phase = phase_data(yaml))
     n_species, n_reactions, species_names,
-    elements, n_elements, ele_matrix = read_species_basics(yaml)
+    elements, n_elements, ele_matrix = read_species_basics(yaml, phase)
 
     nasa_low = zeros(n_species, 7)
     nasa_high = zeros(n_species, 7)
     Trange = zeros(n_species, 3)
 
-    _species_names =
-        [yaml["species"][i]["name"] for i = 1:length(yaml["species"])]
+    species_by_name = species_dict_by_name(yaml["species"])
 
     for (i, species) in enumerate(species_names)
-        spec = yaml["species"][findfirst(x -> x == species, _species_names)]
+        spec = species_entry_from_lookup(species_by_name, species)
         nasa_low[i, :] = spec["thermo"]["data"][1]
         nasa_high[i, :] = spec["thermo"]["data"][2]
         Trange[i, :] .= spec["thermo"]["temperature-ranges"]
@@ -165,4 +164,3 @@ at constant volume (cv) for each species
 function cal_cv_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
    return cal_cp_R(gas,thermo, T, p, X) .- 1
 end
-
