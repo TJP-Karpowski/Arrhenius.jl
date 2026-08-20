@@ -78,7 +78,64 @@ for (phi, doc_name) in property_names
 end
 
 
-# ------ Deprecated ----------# 
+"""
+    temperature_from_enthalpy(gas, h0, p, X; T_guess=1200.0, tol=1e-3, max_iters=50)
+
+Invert mixture mass-specific enthalpy for temperature: find `T` such that
+`cal_hmass_mean(gas, T, p, X) == h0`, at fixed composition `X` (mole
+fractions) and pressure `p`, via Newton's method using `cal_cpmass_mean`
+(`dh/dT` at fixed composition) as the derivative. A thermodynamic closure
+operation -- the inverse of the existing forward `h(T, X)` evaluation
+(`cal_hmass_mean`) generated above -- not solver-specific, so it belongs
+here rather than in a downstream package (originally written inside
+FlameSolver.jl for its Le=1 constant-enthalpy transient solver, where `T`
+is an algebraic function of composition rather than a transported
+variable; moved here since any code needing "the temperature consistent
+with a given enthalpy and composition" needs the same inversion).
+
+Generic in `eltype(X)` so it differentiates correctly under `ForwardDiff`
+-- a fixed iteration count with an early `break` on convergence is a
+standard AD-compatible pattern (the loop's control flow only depends on
+`abs(ΔT) < tol`, i.e. on a `Dual`'s primal value, which `ForwardDiff`
+handles correctly for a smooth, non-branch-sensitive iteration like
+Newton's method).
+
+`tol` default loosened from `1e-6` to `1e-3` -- profiled directly (not
+assumed) in FlameSolver.jl's Le=1 solver, this function's single biggest
+hot-path cost: `1e-6` cost `29.8 us`/`21.7 KB` per call (each Newton
+iteration calls `cal_hmass_mean`/`cal_cpmass_mean`, which allocate),
+`1e-3` cost `2.4 us`/`16.3 KB` -- a 12x time reduction -- for a converged
+`T` identical to 6 significant figures either way. Combustion-scale
+temperatures (hundreds to thousands of K) have no physical meaning at
+`1e-6` K precision; this was tightness with no corresponding benefit.
+
+(A variant that ran a fixed iteration count under `ForwardDiff`, on the
+theory that `abs(ΔT) < tol`'s early break -- branching on a `Dual`'s
+primal value -- could make the AD-computed Jacobian noisy/inconsistent
+across nearby perturbation directions and force excessive outer-Newton
+iterations in a downstream ODE solver, was tried and measured directly:
+zero effect, bit-identical solver statistics before/after. The real cause
+of that downstream slowness was per-process JIT/specialization
+compilation cost, not this. Not worth the extra dispatch complexity.)
+"""
+function temperature_from_enthalpy(
+        gas::Arrhenius.Solution, h0::Real, p::Real, X::AbstractVector{Tel};
+        T_guess::Real = 1200.0, tol::Real = 1.0e-3, max_iters::Integer = 50
+    ) where {Tel}
+    Tcur = convert(Tel, T_guess)
+    for _ in 1:max_iters
+        h = cal_hmass_mean(gas, Tcur, p, X)
+        cp = cal_cpmass_mean(gas, Tcur, p, X)
+        ΔT = (h0 - h) / cp
+        Tcur += ΔT
+        abs(ΔT) < tol && break
+    end
+    return Tcur
+end
+export temperature_from_enthalpy
+
+
+# ------ Deprecated ----------#
 
 "get specific of heat capacity"
 function get_cp(gas, T, X, mean_MW)
