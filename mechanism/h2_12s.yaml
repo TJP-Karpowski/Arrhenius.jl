@@ -1,3 +1,12 @@
+# Boivin, Jimenez, Sanchez & Williams, Proc. Combust. Inst. 33 (2011)
+# 517-523, doi:10.1016/j.proci.2010.05.002.
+#
+# The `gas` phase is the published 9-species/12-step skeletal mechanism.
+# The `boivin-qss` phase contains the six transported species of the published
+# three-step QSS reduction. Its zero placeholder rates are deliberately ignored
+# by `Arrhenius.BoivinQSSReactor`, which evaluates the authors' explicit rate
+# expressions. Keeping both phases here guarantees identical thermodynamic and
+# transport data in the skeletal and QSS comparisons.
 generator: ctml2yaml
 cantera-version: 2.5.1
 date: Tue, 22 Nov 2022 09:46:25 +0100
@@ -11,6 +20,30 @@ phases:
   transport: mixture-averaged
   kinetics: gas
   reactions: all
+  state: {T: 300.0 K, P: 1.01325e+05 Pa}
+- name: boivin-qss
+  elements: [H, O, N]
+  species: [H2, H, O2, H2O, HO2, N2]
+  thermo: ideal-gas
+  transport: mixture-averaged
+  kinetics: gas
+  reactions: boivin-global
+  state: {T: 300.0 K, P: 1.01325e+05 Pa}
+- name: boivin-four-step
+  elements: [H, O, N]
+  species: [H2, H, O2, H2O, HO2, H2O2, N2]
+  thermo: ideal-gas
+  transport: mixture-averaged
+  kinetics: gas
+  reactions: boivin-four-step-global
+  state: {T: 300.0 K, P: 1.01325e+05 Pa}
+- name: boivin-h-only
+  elements: [H, O, N]
+  species: [H2, H, O2, H2O, N2]
+  thermo: ideal-gas
+  transport: mixture-averaged
+  kinetics: gas
+  reactions: boivin-h-only-global
   state: {T: 300.0 K, P: 1.01325e+05 Pa}
 
 species:
@@ -241,3 +274,40 @@ reactions:
   Troe: {A: 0.735, T3: 94.0, T1: 1756.0, T2: 5182.0}
 - equation: HO2 + H2 => H2O2 + H
   rate-constant: {A: 1.62439e+08, b: 0.606961, Ea: 2.3933e+04 cal/mol}
+
+# Stoichiometry for the three global QSS steps. The rate constants are
+# placeholders: BoivinQSSReactor supplies the non-Arrhenius global rates.
+boivin-global:
+- equation: 3 H2 + O2 <=> 2 H2O + 2 H
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+- equation: 2 H + M <=> H2 + M
+  type: three-body
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+  efficiencies: {H2: 2.5, H2O: 12.0}
+- equation: H2 + O2 <=> HO2 + H
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+
+# Stoichiometry of the 2013 wide-range four-step model. As above, these rates
+# are placeholders; BoivinFourStepReactor evaluates the published expressions.
+boivin-four-step-global:
+- equation: 3 H2 + O2 <=> 2 H2O + 2 H
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+- equation: 2 H + M <=> H2 + M
+  type: three-body
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+  efficiencies: {H2: 2.5, H2O: 12.0}
+- equation: H2 + O2 <=> HO2 + H
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+- equation: H2 + O2 <=> H2O2
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+
+# Experimental H-only dynamic representation derived from the 2011 reduction:
+# q3 is constrained to zero, so HO2 joins O/OH/H2O2 in QSS. These placeholder
+# rates are replaced by BoivinHOnlyReactor's two global source terms.
+boivin-h-only-global:
+- equation: 3 H2 + O2 <=> 2 H2O + 2 H
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+- equation: 2 H + M <=> H2 + M
+  type: three-body
+  rate-constant: {A: 0.0, b: 0.0, Ea: 0.0 cal/mol}
+  efficiencies: {H2: 2.5, H2O: 12.0}

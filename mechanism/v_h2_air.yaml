@@ -1,0 +1,161 @@
+# EM2C V-H2-Air v1.0.0, distributed under CC-BY-4.0.
+# Source: https://www.virtual-chemistry.em2c.centralesupelec.fr/schemes/em2c_v_h2/
+# The mechanism data below are the authors' released Cantera model. Arrhenius
+# adds an explicit SI units declaration and a non-empty phase name because its
+# parser preserves legacy cal/mol defaults and selects named phases in tests.
+units: {length: m, time: s, quantity: kmol, activation-energy: J/kmol}
+description: |-
+  ----------------------------------------------------------------------
+  #########################     VIRTUAL H2     #########################
+
+  M. Préteseille, T-P. Luu, É. Espada, N. Darabiha, B. Fiorina.
+  Université Paris-Saclay, CNRS, CentraleSupélec, Laboratoire EM2C.
+
+  "A generalised virtual chemistry formalism with standardised
+  thermodynamics, kinetics and complex transport properties",
+  Combustion Theory and Modelling (2026).
+  https://doi.org/10.1080/13647830.2026.2630700
+
+  Virtual mechanism of H2 oxidation with H2O.
+  Optimized with SuperVision.
+
+  - Operating conditions -> Injection temperature = 300K,
+  Atmospheric pressure, and "Mixture-Averaged" transport model.
+
+  #########################     VIRTUAL H2     #########################
+  ----------------------------------------------------------------------
+
+generator: YamlWriter
+cantera-version: 3.1.0a1
+git-commit: b821893
+date: Fri May 22 14:15:33 2026
+phases:
+  - kinetics: bulk
+    transport: mixture-averaged
+    name: gas
+    thermo: ideal-gas
+    elements: [H, O, N]
+    species: [H2, O2, N2, H2O, P1, I1]
+    state:
+      T: 1.0e-03
+      density: 1.0e-03
+      Y: {H2: 1.0}
+species:
+  - name: H2
+    composition: {H: 2.0}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+        - [2.34433112, 7.98052075e-03, -1.9478151e-05, 2.01572094e-08,
+        -7.37611761e-12, -917.935173, 0.683010238]
+        - [2.93286575, 8.26608026e-04, -1.46402364e-07, 1.54100414e-11,
+        -6.888048e-16, -813.065581, -1.02432865]
+    transport:
+      model: gas
+      geometry: linear
+      diameter: 2.19
+      well-depth: 304.69
+      polarizability: 0.775
+      rotational-relaxation: 280.0
+  - name: O2
+    composition: {O: 2.0}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+        - [3.78245636, -2.99673416e-03, 9.84730201e-06, -9.68129509e-09,
+        3.24372837e-12, -1063.94356, 3.65767573]
+        - [3.66096065, 6.56365811e-04, -1.41149627e-07, 2.05797935e-11,
+        -1.29913436e-15, -1215.97718, 3.41536279]
+    transport:
+      model: gas
+      geometry: linear
+      diameter: 3.069
+      well-depth: 676.424
+      polarizability: 1.487
+      rotational-relaxation: 3.8
+  - name: N2
+    composition: {N: 2.0}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+        - [3.53100528, -1.23660988e-04, -5.02999433e-07, 2.43530612e-09,
+        -1.40881235e-12, -1046.97628, 2.96747038]
+        - [2.95257637, 1.3969004e-03, -4.92631603e-07, 7.86010195e-11,
+        -4.60755204e-15, -923.948688, 5.87188762]
+    transport:
+      model: gas
+      geometry: linear
+      diameter: 3.61
+      well-depth: 97.839
+      polarizability: 1.756
+      rotational-relaxation: 4.0
+  - name: H2O
+    composition: {H: 2.0, O: 1.0}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+        - [4.1986352, -2.0364017e-03, 6.5203416e-06, -5.4879269e-09, 1.771968e-12,
+        -3.0293726e+04, -0.84900901]
+        - [2.6770389, 2.9731816e-03, -7.7376889e-07, 9.4433514e-11, -4.2689991e-15,
+        -2.9885894e+04, 6.88255]
+    transport:
+      model: gas
+      geometry: nonlinear
+      diameter: 2.943
+      well-depth: 637.056
+      dipole: 1.851
+      polarizability: 1.407
+      rotational-relaxation: 4.0
+  - name: P1
+    composition: {H: 1.187596842423593, O: 0.9197441245756278}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 3500.0]
+      data:
+        - [2.673593836160745, 1.994998165141338e-03, -4.467585183276487e-07,
+        1.027945336376852e-10, -5.807066153926387e-15, -110.6002265573711,
+        5.891943385810618]
+        - [2.673593836160745, 1.994998165141338e-03, -4.467585183276487e-07,
+        1.027945336376852e-10, -5.807066153926387e-15, -110.6002265573711,
+        5.891943385810618]
+    transport:
+      model: gas
+      geometry: atom
+      diameter: 1.113772551669343
+      well-depth: 10.52336687310943
+  - name: I1
+    composition: {H: 1.652191202594352, O: 0.5000260874047728}
+    thermo:
+      model: NASA7
+      temperature-ranges: [200.0, 1000.0, 3500.0]
+      data:
+        - [7.980436638792251, -1.200776375338352e-03, 9.219006463430151e-06,
+        -2.010535352578531e-09, -8.741975766243852e-12, -997.3408974312737,
+        -14.61779384184246]
+        - [5.247480935848950, 5.587238827364493e-04, -5.866729002834119e-07,
+        2.995018521175263e-11, -3.326495452073890e-15, 1866.573225773221,
+        4.539310602542415]
+    transport:
+      model: gas
+      geometry: atom
+      diameter: 1.008112525555641
+      well-depth: 11.23576140419229
+reactions:
+  - equation: 2.000000000000003 H2 + O2 => 0.795360417258530 H2O + 0.848266302574665 I1 + 0.848588516668008 P1
+    rate-constant: {A: 7.750823038616595e+26, b: 0.0, Ea: 1.285999452310576e+08}
+    orders:
+      H2: 2.728846380510735
+      O2: 3.851863156912101
+  - equation: I1 + 1.000379850163061 P1 => 1.420119576936095 H2O
+    rate-constant: {A: 3.458670389616880e+08, b: 0.0, Ea: 2.592739026110604e+05}
+    orders:
+      I1: 1.266025677914440
+      P1: 0.7590241891751335
+  - equation: H2 + 3.067995649826889 P1 <=> 2.821770973151866 H2O
+    rate-constant: {A: 1.324290647168731e+06, b: 0.0, Ea: 2.839174243101791e+06}
+  - equation: 6.135991299653777 P1 <=> 3.643541946303732 H2O + O2
+    rate-constant: {A: 1.993142973735268e+13, b: 0.0, Ea: 1.742575751388848e+05}
