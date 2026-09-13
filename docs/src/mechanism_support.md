@@ -14,6 +14,7 @@ tests or benchmarks. The table below summarizes the current validated surface.
 | `mechanism/h2_12s.yaml` (`boivin-h-only`) | yes | yes, custom QSS | not applicable | flame baseline | ForwardDiff local Jacobian | no | Experimental two-step descendant of the 2011 model: dynamic H2/H/O2/H2O/N2, with O/OH/HO2/H2O2 algebraic. This is not a separately published Boivin mechanism. |
 | `mechanism/v_h2_air.yaml` | yes | yes | not applicable | flame baseline | yes | no | Published EM2C V-H2-Air v1.0.0 virtual mechanism (CC-BY-4.0): four reactions, four physical species, and virtual species P1/I1. CPU RHS is regression-tested against Cantera 3.2. |
 | `mechanism/gri30.yaml` | yes | yes | TP, HP | yes | yes | no | CH4-air equilibrium is validated from phi 0.5 to 2.0 and 0.1 to 100 bar. |
+| `mechanism/nh3_stagni_2025.yaml` | yes | yes | not separately validated | Cantera 3.2 profiles | not separately validated | no | Pure NH3/air at 20 bar and a 50% H2 fuel blend at 10 bar are validated at 1000 K against committed full-composition ignition profiles. |
 | `test/mechanisms/cantera/air.yaml` | yes | yes | no | no | generated smoke | no | Parser and generated-Jacobian fixture copied from Cantera top-level data. |
 | `test/mechanisms/cantera/gri30_highT.yaml` | yes | yes | no | no | no | no | Cantera-format parser fixture. |
 | `test/mechanisms/cantera/SiF4_NH3_mec.yaml` | yes | finite-state fixture | no | no | no | no | Ammonia-containing Cantera fixture using the `gas` phase. |

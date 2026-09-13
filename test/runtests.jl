@@ -1020,6 +1020,8 @@ end
     @test !successful(li_cvode_sol)
 end
 
+include("ignition/stagni_2025.jl")
+
 @testset "isobaric reactor Jacobian" begin
     gas = CreateSolution(mechanism_path("h2o2.yaml"))
     X0 = fill(1 / gas.n_species, gas.n_species)

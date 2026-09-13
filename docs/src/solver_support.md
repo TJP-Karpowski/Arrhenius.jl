@@ -22,7 +22,11 @@ accepted solution is valid.
 ## Mechanism coverage
 
 The core test suite covers bundled mechanisms including `h2o2.yaml`,
-`h2_li_2004.yaml`, and `gri30.yaml`. It also includes copied Cantera 3.2.0
+`h2_li_2004.yaml`, `gri30.yaml`, and `nh3_stagni_2025.yaml`. The Stagni
+mechanism is checked against committed Cantera 3.2.0 constant-pressure
+ignition profiles for pure NH3/air and an NH3/H2 fuel blend; Cantera remains
+an external reference generator rather than a package or test dependency.
+The suite also includes copied Cantera 3.2.0
 fixtures under `test/mechanisms/cantera`:
 
 - `air.yaml`
