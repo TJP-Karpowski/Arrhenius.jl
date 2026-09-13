@@ -71,6 +71,35 @@ return isobaricReactor(
 end
 
 """
+    isobaricReactor(gas, ::Type{T}) where {T}
+
+Create an isobaric reactor workspace whose floating-point work arrays have
+element type `T`. This is useful for automatic differentiation and other
+number types that need to flow through the reactor RHS.
+"""
+function isobaricReactor(gas, ::Type{T}) where {T}
+return isobaricReactor(
+    gas,
+    zeros(T, gas.n_species, 7),
+    T(300),
+    T(101325),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_species),
+    zeros(T, gas.n_reactions),
+    zeros(T, gas.n_reactions),
+    zeros(T, 6),
+    zeros(T, 6),
+    zeros(T, 5),
+    zero(T),
+    zero(T),
+    zero(T))
+end
+
+"""
     cal_h_RT!(state::isobaricReactor,T,p)
 
     Calculates the dimensionless enthalpy h/RT and stores it in state.h_RT
@@ -117,7 +146,7 @@ calculates the dimensionless entropy s/R and stores it in state.s0_R
 using the NASA polynomial coefficients stored in state.nasa_poly.
 """
 function cal_s0_R!(state::isobaricReactor,T,p)
-    state.entropy_T_poly[1] = log(T)
+    state.entropy_T_poly[1] = safe_log(T)
     state.entropy_T_poly[2] = T
     state.entropy_T_poly[3] = T^2/2.
     state.entropy_T_poly[4] = T^3/3.

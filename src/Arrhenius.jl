@@ -23,4 +23,5 @@ module Arrhenius
     include("Transport.jl")
     include("ODE_functions.jl")
     include("QSS.jl")
+    include("Jacobian.jl")
 end
