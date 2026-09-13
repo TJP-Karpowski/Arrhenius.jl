@@ -12,9 +12,38 @@ function phase_data(yaml; phase = 1)
     return yaml["phases"][phase_index(yaml, phase)]
 end
 
-function read_species_basics(yaml, phase = phase_data(yaml))
+function reaction_section(yaml, name)
+    haskey(yaml, name) || error("Reaction section '$name' not found")
+    return yaml[name]
+end
+
+function active_reactions(yaml, phase)
+    phase_reactions = get(phase, "reactions", "all")
+
+    if phase_reactions == "all"
+        haskey(yaml, "reactions") || error("YAML has no top-level 'reactions' block")
+        return yaml["reactions"]
+    elseif phase_reactions isa AbstractString
+        return reaction_section(yaml, phase_reactions)
+    end
+
+    reactions = Any[]
+    for section in phase_reactions
+        section == "all" && append!(reactions, yaml["reactions"])
+        section != "all" && append!(reactions, reaction_section(yaml, section))
+    end
+    return reactions
+end
+
+function yaml_with_active_reactions(yaml, reactions)
+    active_yaml = copy(yaml)
+    active_yaml["reactions"] = reactions
+    return active_yaml
+end
+
+function read_species_basics(yaml, phase = phase_data(yaml); reactions = active_reactions(yaml, phase))
     n_species = length(phase["species"])
-    n_reactions = length(yaml["reactions"])
+    n_reactions = length(reactions)
     species_names = String.(strip.(phase["species"]))
     elements = phase["elements"]
     n_elements = length(elements)
@@ -43,9 +72,10 @@ function build_thermo(yaml, phase)
     return getfield(@__MODULE__, constructorThermo)(yaml)
 end
 
-function build_kinetics(yaml, species_names; reorderReactions = true)
-    n_reactions = length(yaml["reactions"])
-    kin = build_kinetic_data_from_yaml(yaml, species_names)
+function build_kinetics(yaml, species_names; reorderReactions = true, reactions = active_reactions(yaml, phase_data(yaml)))
+    active_yaml = yaml_with_active_reactions(yaml, reactions)
+    n_reactions = length(reactions)
+    kin = build_kinetic_data_from_yaml(active_yaml, species_names)
     reactant_stoich_coeffs = kin.reactant_stoich_coeffs
     product_stoich_coeffs = kin.product_stoich_coeffs
     reactant_orders = kin.reactant_orders
@@ -54,13 +84,19 @@ function build_kinetics(yaml, species_names; reorderReactions = true)
     Arrhenius_0 = kin.Arrhenius_0
     is_reversible = kin.is_reversible
     Troe_ = kin.Troe_
+    index_pressure_dependent = kin.index_pressure_dependent
+    pressure_dependent_pressures = kin.pressure_dependent_pressures
+    pressure_dependent_arrhenius = kin.pressure_dependent_arrhenius
+    pressure_dependent_ptr = kin.pressure_dependent_ptr
+    pressure_dependent_is_linear_burke = kin.pressure_dependent_is_linear_burke
+    linear_burke_efficiencies = kin.linear_burke_efficiencies
 
     index_three_body = Int64[]
     index_falloff = Int64[]
     index_falloff_Troe = Int64[]
     j = 1
     for i = 1:n_reactions
-        reaction = yaml["reactions"][i]
+        reaction = reactions[i]
         if haskey(reaction, "type")
             if reaction["type"] == "three-body"
                 push!(index_three_body, i)
@@ -105,6 +141,12 @@ function build_kinetics(yaml, species_names; reorderReactions = true)
         index_three_body,
         index_falloff,
         index_falloff_Troe,
+        index_pressure_dependent,
+        pressure_dependent_pressures,
+        pressure_dependent_arrhenius,
+        pressure_dependent_ptr,
+        pressure_dependent_is_linear_burke,
+        linear_burke_efficiencies,
         efficiencies_coeffs,
         i_reactant,
         i_product,
@@ -135,17 +177,18 @@ function CreateSolution(mech; reorderReactions = true, phase = 1, phase_index = 
     yaml = YAML.load_file(mech)
     selected_phase = phase_name === nothing ? (phase_index === nothing ? phase : phase_index) : phase_name
     phase_yaml = phase_data(yaml; phase = selected_phase)
+    reactions = active_reactions(yaml, phase_yaml)
 
     #### Basics
     n_species, n_reactions, species_names,
-    elements, n_elements, ele_matrix = read_species_basics(yaml, phase_yaml)
+    elements, n_elements, ele_matrix = read_species_basics(yaml, phase_yaml; reactions = reactions)
 
     #### Thermo
     thermo = build_thermo(yaml, phase_yaml)
     MW = build_MW_from_yaml(yaml, species_names)
     
     #### Kinetic data
-    kinetics = build_kinetics(yaml, species_names; reorderReactions = reorderReactions)
+    kinetics = build_kinetics(yaml, species_names; reorderReactions = reorderReactions, reactions = reactions)
     #### Transport data
 
     trans = build_transport(yaml, species_names, MW, thermo)
@@ -189,6 +232,9 @@ function ReorderedKinetics(kinetics::StandardKinetics)
             push!(i_A0_troe,i)
         end
     end
+    reordered_indices = vcat(findall(i_forward), i_rev, i_tB, i_fO, i_troe)
+    old_to_new = Dict(index => i for (i, index) in enumerate(reordered_indices))
+    index_pressure_dependent = [old_to_new[i] for i in kinetics.index_pressure_dependent]
 
     arr_coeffs = vcat(
         kinetics.Arrhenius_coeffs[i_forward,:],
@@ -250,6 +296,28 @@ function ReorderedKinetics(kinetics::StandardKinetics)
 
     troe =kinetics.Troe_
 
+    pressure_dependent_pressures = Float64[]
+    pressure_dependent_arrhenius = Matrix{Float64}(undef, 0, 3)
+    pressure_dependent_ptr = Int64[1]
+    pressure_dependent_is_linear_burke = Bool[]
+    linear_burke_efficiencies = zeros(Float64, size(kinetics.reactant_orders, 1), 0, 3)
+    for (pdep_i, _) in enumerate(kinetics.index_pressure_dependent)
+        first = kinetics.pressure_dependent_ptr[pdep_i]
+        last = kinetics.pressure_dependent_ptr[pdep_i + 1] - 1
+        append!(pressure_dependent_pressures, kinetics.pressure_dependent_pressures[first:last])
+        pressure_dependent_arrhenius = vcat(
+            pressure_dependent_arrhenius,
+            kinetics.pressure_dependent_arrhenius[first:last, :],
+        )
+        push!(pressure_dependent_ptr, length(pressure_dependent_pressures) + 1)
+        push!(pressure_dependent_is_linear_burke, kinetics.pressure_dependent_is_linear_burke[pdep_i])
+        linear_burke_efficiencies = cat(
+            linear_burke_efficiencies,
+            kinetics.linear_burke_efficiencies[:, pdep_i:pdep_i, :];
+            dims = 2,
+        )
+    end
+
     index_rev_start = sum(i_forward)+1
     index_three_body_start = index_rev_start + length(i_rev) 
     index_fallOff_start = index_three_body_start + length(i_tB) 
@@ -268,6 +336,12 @@ function ReorderedKinetics(kinetics::StandardKinetics)
         efficiency_coeffs_fO,
         Arrhenius_0,
         troe,
+        pressure_dependent_pressures,
+        pressure_dependent_arrhenius,
+        pressure_dependent_ptr,
+        index_pressure_dependent,
+        pressure_dependent_is_linear_burke,
+        linear_burke_efficiencies,
         index_rev_start,
         index_three_body_start,
         index_fallOff_start,

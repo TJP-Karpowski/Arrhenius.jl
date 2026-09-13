@@ -1,7 +1,9 @@
-function parse_activation_energy_cal_per_mol(Ea_raw)::Float64
-    # Already numeric: assume the mechanism-level units are cal/mol.
+function parse_activation_energy_cal_per_mol(Ea_raw, default_unit = "cal/mol")::Float64
+    # Bare numeric values use the mechanism-level activation-energy unit.
     if Ea_raw isa Number
-        return float(Ea_raw)
+        value = float(Ea_raw)
+        unit = lowercase(String(default_unit))
+        return activation_energy_to_cal_per_mol(value, unit)
     end
 
     # Otherwise, treat as string with possible units, e.g. "1.6599e+04 cal/mol"
@@ -11,34 +13,196 @@ function parse_activation_energy_cal_per_mol(Ea_raw)::Float64
     # Split on whitespace: ["1.6599e+04", "cal/mol"]
     parts = split(s)
     value = parse(Float64, parts[1])
-    unit  = length(parts) >= 2 ? lowercase(parts[2]) : "j/mol"  # default if no unit
+    unit  = length(parts) >= 2 ? lowercase(parts[2]) : lowercase(String(default_unit))
 
     # Normalize some common variants
     unit = replace(unit, " " => "")
     unit = replace(unit, "per" => "/")  # e.g. "J per mol" -> "J/mol"
 
+    return activation_energy_to_cal_per_mol(value, unit)
+end
+
+function activation_energy_to_cal_per_mol(value, unit)
     # Convert to cal/mol, which is what ReorderedKinetics currently expects.
+    unit = replace(lowercase(String(unit)), " " => "")
+    unit = replace(unit, "per" => "/")
     if unit in ("j/mol", "j")
         return value / 4.184
+    elseif unit == "j/kmol"
+        return value / 4184.0
     elseif unit in ("kj/mol", "kj")
         return value / 4.184e-3
+    elseif unit == "kj/kmol"
+        return value / 4.184
     elseif unit in ("cal/mol", "cal")
-        return value 
+        return value
+    elseif unit == "cal/kmol"
+        return value / 1000.0
     elseif unit in ("kcal/mol", "kcal")
         return value * 1e3
+    elseif unit == "kcal/kmol"
+        return value
     elseif unit in ("k", "kelvin")
         # Sometimes Ea is given as Ea/R in K
         return value * R / 4.184
     else
-        error("Unsupported Ea unit '$unit' in '$s'")
+        error("Unsupported activation-energy unit '$unit'")
     end
 end
 
-# Remove third-body markers like "(+ M)" or "(+M)" before splitting
+function parse_pressure_atm(P_raw)::Float64
+    if P_raw isa Number
+        return float(P_raw)
+    end
+
+    s = String(P_raw) |> strip
+    parts = split(s)
+    value = parse(Float64, parts[1])
+    unit = length(parts) >= 2 ? lowercase(parts[2]) : "atm"
+    unit = replace(unit, " " => "")
+
+    if unit in ("atm", "atmosphere", "atmospheres")
+        return value
+    elseif unit in ("pa", "pascal", "pascals")
+        return value / one_atm
+    elseif unit in ("bar",)
+        return value * 1.0e5 / one_atm
+    elseif unit in ("torr",)
+        return value / 760.0
+    else
+        error("Unsupported pressure unit '$unit' in '$s'")
+    end
+end
+
+function pressure_dependent_rate_constants(reaction)
+    if get(reaction, "type", nothing) == "pressure-dependent-Arrhenius"
+        return reaction["rate-constants"]
+    elseif get(reaction, "type", nothing) == "linear-Burke"
+        for collider in get(reaction, "colliders", Any[])
+            if get(collider, "name", nothing) == "M" &&
+               get(collider, "type", nothing) == "pressure-dependent-Arrhenius"
+                return collider["rate-constants"]
+            end
+        end
+    end
+    return nothing
+end
+
+function linear_burke_efficiency_coefficients!(coeffs, reaction, species_names,
+        activation_energy_unit = "cal/mol")
+    get(reaction, "type", nothing) == "linear-Burke" || return nothing
+    coeffs[:, 1] .= 1.0
+    coeffs[:, 2] .= 0.0
+    coeffs[:, 3] .= 0.0
+    idx_species = species_lookup(species_names)
+    for collider in get(reaction, "colliders", Any[])
+        haskey(collider, "efficiency") || continue
+        collider_name = strip(String(collider["name"]))
+        idx = if haskey(idx_species, collider_name)
+            idx_species[collider_name]
+        elseif haskey(idx_species, lowercase(collider_name))
+            idx_species[lowercase(collider_name)]
+        else
+            continue
+        end
+        eff = collider["efficiency"]
+        coeffs[idx, 1] = float(eff["A"])
+        coeffs[idx, 2] = float(eff["b"])
+        coeffs[idx, 3] = parse_activation_energy_cal_per_mol(
+            eff["Ea"], activation_energy_unit)
+    end
+    return nothing
+end
+
+function unit_value(units, key, default)
+    units === nothing && return default
+    haskey(units, key) && return lowercase(String(units[key]))
+    haskey(units, String(key)) && return lowercase(String(units[String(key)]))
+    return default
+end
+
+function length_unit_meters(unit)
+    unit = replace(lowercase(unit), " " => "")
+    if unit in ("m", "meter", "meters")
+        return 1.0
+    elseif unit in ("cm", "centimeter", "centimeters")
+        return 1.0e-2
+    elseif unit in ("mm", "millimeter", "millimeters")
+        return 1.0e-3
+    else
+        error("Unsupported mechanism length unit '$unit'")
+    end
+end
+
+function quantity_unit_kmol(unit)
+    unit = replace(lowercase(unit), " " => "")
+    if unit in ("kmol", "kilomol", "kilomole", "kilomoles")
+        return 1.0
+    elseif unit in ("mol", "mole", "moles")
+        return 1.0e-3
+    else
+        error("Unsupported mechanism quantity unit '$unit'")
+    end
+end
+
+function time_unit_seconds(unit)
+    unit = replace(lowercase(unit), " " => "")
+    if unit in ("s", "sec", "second", "seconds")
+        return 1.0
+    elseif unit in ("ms", "millisecond", "milliseconds")
+        return 1.0e-3
+    elseif unit in ("us", "microsecond", "microseconds")
+        return 1.0e-6
+    else
+        error("Unsupported mechanism time unit '$unit'")
+    end
+end
+
+function mechanism_concentration_unit_kmol_per_m3(yaml)
+    units = get(yaml, "units", nothing)
+    units === nothing && return 1.0
+    length_m = length_unit_meters(unit_value(units, "length", "m"))
+    quantity_kmol = quantity_unit_kmol(unit_value(units, "quantity", "kmol"))
+    return quantity_kmol / length_m^3
+end
+
+function mechanism_time_rate_scale(yaml)
+    units = get(yaml, "units", nothing)
+    units === nothing && return 1.0
+    return inv(time_unit_seconds(unit_value(units, "time", "s")))
+end
+
+function convert_preexponential_to_si(A, total_concentration_order, concentration_unit_scale, time_rate_scale)
+    return float(A) * time_rate_scale * concentration_unit_scale^(1 - total_concentration_order)
+end
+
+function reaction_concentration_order(reactant_orders, reaction::Int)
+    order = 0.0
+    for idx in reactant_orders.colptr[reaction]:reactant_orders.colptr[reaction + 1] - 1
+        order += reactant_orders.nzval[idx]
+    end
+    return order
+end
+
+# Remove parenthesized collider markers such as "(+M)", "(+ M)",
+# "(+N2)", or "(+H2O)" before splitting the stoichiometric equation.  The
+# collider identity belongs to the falloff-rate metadata, not to net reaction
+# stoichiometry.
 function clean_third_body_marks(s)
-    # remove "(+ M)", "(+M)", with any amount of whitespace before M
-    s = replace(s, r"\(\+\s*M\)" => "")
+    s = replace(s, r"\(\+\s*[^)]+\)" => "")
     return s
+end
+
+"""
+    parenthesized_collider(equation)
+
+Return the collider named in a parenthesized falloff marker such as `(+M)` or
+`(+N2)`. A named collider denotes a collider-specific falloff channel and is
+not equivalent to the generic bath-gas collider `M`.
+"""
+function parenthesized_collider(equation)
+    matched = match(r"\(\+\s*([^)\s]+)\s*\)", equation)
+    matched === nothing ? nothing : strip(String(matched.captures[1]))
 end
 
 function species_lookup(names)
@@ -113,13 +277,44 @@ function build_kinetic_data_from_yaml(yaml, species_names::Vector{String})
     reactions = yaml["reactions"]
     n_reac    = length(reactions)
     n_spec    = length(species_names)
+    concentration_unit_scale = mechanism_concentration_unit_kmol_per_m3(yaml)
+    time_rate_scale = mechanism_time_rate_scale(yaml)
+    activation_energy_unit = unit_value(get(yaml, "units", nothing),
+        "activation-energy", "cal/mol")
     # count falloff reactions
     n_falloff = count(r -> get(r, "type", nothing) == "falloff", reactions)
     n_troe = count(r -> get(r, "type", nothing) == "falloff" && haskey(r, "Troe"),
                reactions)
-
-
     idx_species = species_lookup(species_names)
+    index_pressure_dependent = Int64[]
+    pressure_dependent_pressures = Float64[]
+    pressure_dependent_arrhenius_rows = Vector{NTuple{3,Float64}}()
+    pressure_dependent_ptr = Int64[1]
+    pressure_dependent_is_linear_burke = Bool[]
+    linear_burke_efficiencies = zeros(Float64, n_spec, 0, 3)
+    for (j, reaction) in enumerate(reactions)
+        rates = pressure_dependent_rate_constants(reaction)
+        rates === nothing && continue
+        push!(index_pressure_dependent, j)
+        is_linear_burke = get(reaction, "type", nothing) == "linear-Burke"
+        push!(pressure_dependent_is_linear_burke, is_linear_burke)
+        coeffs = zeros(Float64, n_spec, 1, 3)
+        if is_linear_burke
+            coeff_view = @view coeffs[:, 1, :]
+            linear_burke_efficiency_coefficients!(coeff_view, reaction,
+                species_names, activation_energy_unit)
+        end
+        linear_burke_efficiencies = cat(linear_burke_efficiencies, coeffs; dims = 2)
+        for rate in rates
+            push!(pressure_dependent_pressures, parse_pressure_atm(rate["P"]))
+            push!(pressure_dependent_arrhenius_rows, (
+                float(rate["A"]),
+                float(rate["b"]),
+                parse_activation_energy_cal_per_mol(rate["Ea"], activation_energy_unit),
+            ))
+        end
+        push!(pressure_dependent_ptr, length(pressure_dependent_pressures) + 1)
+    end
 
     reactant_stoich_coeffs = spzeros(Float64, n_spec, n_reac)
     product_stoich_coeffs  = spzeros(Float64, n_spec, n_reac)
@@ -135,6 +330,17 @@ function build_kinetic_data_from_yaml(yaml, species_names::Vector{String})
     troe_idx    = 0 # conter within the loop
     for (j, mech_reaction) in enumerate(reactions)
         eq = mech_reaction["equation"]::String
+
+        # For a named marker such as `(+N2)`, the effective collider
+        # concentration is C_N2. Generic `(+M)` channels retain the all-ones
+        # default and any explicit YAML efficiencies are applied below.
+        collider = parenthesized_collider(eq)
+        if get(mech_reaction, "type", nothing) == "falloff" &&
+                collider !== nothing && uppercase(collider) != "M"
+            efficiencies_coeffs[:, j] .= 0.0
+            efficiencies_coeffs[
+                species_index_from_lookup(idx_species, collider), j] = 1.0
+        end
 
         # --- reversibility ---
         if !haskey(mech_reaction, "type")
@@ -175,23 +381,39 @@ function build_kinetic_data_from_yaml(yaml, species_names::Vector{String})
         end
 
         # --- Arrhenius coefficients ---
+        pdep_rates = pressure_dependent_rate_constants(mech_reaction)
+        reaction_order = reaction_concentration_order(reactant_orders, j)
+        effective_reaction_order = get(mech_reaction, "type", nothing) == "three-body" ? reaction_order + 1 : reaction_order
         if haskey(mech_reaction, "rate-constant")
             k = mech_reaction["rate-constant"]
-            Arrhenius_coeffs[j, 1] = k["A"]
+            Arrhenius_coeffs[j, 1] =
+                convert_preexponential_to_si(k["A"], effective_reaction_order, concentration_unit_scale, time_rate_scale)
             Arrhenius_coeffs[j, 2] = k["b"]
-            Arrhenius_coeffs[j, 3] = parse_activation_energy_cal_per_mol(k["Ea"])
+            Arrhenius_coeffs[j, 3] = parse_activation_energy_cal_per_mol(
+                k["Ea"], activation_energy_unit)
+        elseif pdep_rates !== nothing
+            k = pdep_rates[1]
+            Arrhenius_coeffs[j, 1] =
+                convert_preexponential_to_si(k["A"], reaction_order, concentration_unit_scale, time_rate_scale)
+            Arrhenius_coeffs[j, 2] = k["b"]
+            Arrhenius_coeffs[j, 3] = parse_activation_energy_cal_per_mol(
+                k["Ea"], activation_energy_unit)
         elseif get(mech_reaction, "type", nothing) == "falloff"
             # choose a convention: use high-P as main Arrhenius for now
             high = mech_reaction["high-P-rate-constant"]
-            Arrhenius_coeffs[j, 1] = high["A"]
+            Arrhenius_coeffs[j, 1] =
+                convert_preexponential_to_si(high["A"], reaction_order, concentration_unit_scale, time_rate_scale)
             Arrhenius_coeffs[j, 2] = high["b"]
-            Arrhenius_coeffs[j, 3] = parse_activation_energy_cal_per_mol(high["Ea"])
+            Arrhenius_coeffs[j, 3] = parse_activation_energy_cal_per_mol(
+                high["Ea"], activation_energy_unit)
             # low-pressure limit goes into Arrhenius_0 (n_falloff × 3)
             low = mech_reaction["low-P-rate-constant"]
             falloff_idx += 1
-            Arrhenius_0[falloff_idx, 1] = low["A"]
+            Arrhenius_0[falloff_idx, 1] =
+                convert_preexponential_to_si(low["A"], reaction_order + 1, concentration_unit_scale, time_rate_scale)
             Arrhenius_0[falloff_idx, 2] = low["b"]
-            Arrhenius_0[falloff_idx, 3] = parse_activation_energy_cal_per_mol(low["Ea"])
+            Arrhenius_0[falloff_idx, 3] = parse_activation_energy_cal_per_mol(
+                low["Ea"], activation_energy_unit)
 
             # --- Troe data (optional for some falloff reactions) ---
             if haskey(mech_reaction, "Troe")
@@ -222,6 +444,23 @@ function build_kinetic_data_from_yaml(yaml, species_names::Vector{String})
         end
     end
 
+    pressure_dependent_arrhenius = if isempty(pressure_dependent_arrhenius_rows)
+        zeros(Float64, 0, 3)
+    else
+        reduce(vcat, ([row[1] row[2] row[3]] for row in pressure_dependent_arrhenius_rows))
+    end
+    for (pdep_idx, reaction_index) in enumerate(index_pressure_dependent)
+        order = reaction_concentration_order(reactant_orders, reaction_index)
+        for row in pressure_dependent_ptr[pdep_idx]:(pressure_dependent_ptr[pdep_idx + 1] - 1)
+            pressure_dependent_arrhenius[row, 1] = convert_preexponential_to_si(
+                pressure_dependent_arrhenius[row, 1],
+                order,
+                concentration_unit_scale,
+                time_rate_scale,
+            )
+        end
+    end
+
     return (
         reactant_stoich_coeffs      = reactant_stoich_coeffs,
         product_stoich_coeffs       = product_stoich_coeffs,
@@ -230,7 +469,13 @@ function build_kinetic_data_from_yaml(yaml, species_names::Vector{String})
         is_reversible               = is_reversible,
         Arrhenius_coeffs            = Arrhenius_coeffs,
         Arrhenius_0                 = Arrhenius_0,
-        Troe_                       = Troe_
+        Troe_                       = Troe_,
+        index_pressure_dependent    = index_pressure_dependent,
+        pressure_dependent_pressures = pressure_dependent_pressures,
+        pressure_dependent_arrhenius = pressure_dependent_arrhenius,
+        pressure_dependent_ptr      = pressure_dependent_ptr,
+        pressure_dependent_is_linear_burke = pressure_dependent_is_linear_burke,
+        linear_burke_efficiencies = linear_burke_efficiencies,
     )
 end
 

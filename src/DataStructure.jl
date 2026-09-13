@@ -12,6 +12,12 @@ struct StandardKinetics<: Kinetics
     index_three_body::Array{Int64,1}
     index_falloff::Array{Int64,1}
     index_falloff_Troe::Array{Int64,1}
+    index_pressure_dependent::Array{Int64,1}
+    pressure_dependent_pressures::Vector{Float64}
+    pressure_dependent_arrhenius::Matrix{Float64}
+    pressure_dependent_ptr::Vector{Int64}
+    pressure_dependent_is_linear_burke::Vector{Bool}
+    linear_burke_efficiencies::Array{Float64,3}
     efficiencies_coeffs::SparseMatrixCSC{Float64,Int64}
     i_reactant::Array{Array{Int64,1},1}
     i_product::Array{Array{Int64,1},1}
@@ -24,7 +30,7 @@ abstract type Thermo end
 
 
 
-struct ReorderedKinetics{Ty<:AbstractArray,sTy<:AbstractArray,vTy<:AbstractVector} <: Kinetics
+struct ReorderedKinetics{Ty<:AbstractArray,sTy<:AbstractArray,vTy<:AbstractVector,lbTy<:AbstractArray} <: Kinetics
     arrhenius_coeffs::Ty
     reactant_orders::sTy
     product_stoich_coeffs::sTy
@@ -36,10 +42,58 @@ struct ReorderedKinetics{Ty<:AbstractArray,sTy<:AbstractArray,vTy<:AbstractVecto
     efficiency_coeffs_fO::sTy
     Arrhenius_0::Ty
     troe::Ty
+    pressure_dependent_pressures::vTy
+    pressure_dependent_arrhenius::Ty
+    pressure_dependent_ptr::Vector{Int64}
+    index_pressure_dependent::Vector{Int64}
+    pressure_dependent_is_linear_burke::Vector{Bool}
+    linear_burke_efficiencies::lbTy
     index_rev_start::Int64
     index_three_body_start::Int64
     index_fallOff_start::Int64
     index_troe_start::Int64
+end
+
+function ReorderedKinetics(
+    arrhenius_coeffs,
+    reactant_orders,
+    product_stoich_coeffs,
+    reactant_stoich_coeffs,
+    vk,
+    vk_rev,
+    vk_sum,
+    efficiency_coeffs_tB,
+    efficiency_coeffs_fO,
+    Arrhenius_0,
+    troe,
+    index_rev_start::Int64,
+    index_three_body_start::Int64,
+    index_fallOff_start::Int64,
+    index_troe_start::Int64,
+)
+    return ReorderedKinetics(
+        arrhenius_coeffs,
+        reactant_orders,
+        product_stoich_coeffs,
+        reactant_stoich_coeffs,
+        vk,
+        vk_rev,
+        vk_sum,
+        efficiency_coeffs_tB,
+        efficiency_coeffs_fO,
+        Arrhenius_0,
+        troe,
+        Float64[],
+        zeros(Float64, 0, 3),
+        Int64[1],
+        Int64[],
+        Bool[],
+        zeros(Float64, size(reactant_orders, 1), 0, 3),
+        index_rev_start,
+        index_three_body_start,
+        index_fallOff_start,
+        index_troe_start,
+    )
 end
 
 struct PackedSparseColumns{vTy<:AbstractVector,iTy<:AbstractVector}
@@ -50,7 +104,14 @@ struct PackedSparseColumns{vTy<:AbstractVector,iTy<:AbstractVector}
     ncol::Int64
 end
 
-struct PackedKinetics{Ty<:AbstractArray,sTy<:PackedSparseColumns,vTy<:AbstractVector} <: Kinetics
+struct PackedKinetics{
+    Ty<:AbstractArray,
+    sTy<:PackedSparseColumns,
+    vTy<:AbstractVector,
+    iTy<:AbstractVector,
+    bTy<:AbstractVector,
+    lbTy<:AbstractArray,
+} <: Kinetics
     arrhenius_coeffs::Ty
     reactant_orders::sTy
     product_stoich_coeffs::sTy
@@ -62,6 +123,12 @@ struct PackedKinetics{Ty<:AbstractArray,sTy<:PackedSparseColumns,vTy<:AbstractVe
     efficiency_coeffs_fO::sTy
     Arrhenius_0::Ty
     troe::Ty
+    pressure_dependent_pressures::vTy
+    pressure_dependent_arrhenius::Ty
+    pressure_dependent_ptr::iTy
+    index_pressure_dependent::iTy
+    pressure_dependent_is_linear_burke::bTy
+    linear_burke_efficiencies::lbTy
     index_rev_start::Int64
     index_three_body_start::Int64
     index_fallOff_start::Int64

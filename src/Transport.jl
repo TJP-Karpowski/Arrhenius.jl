@@ -47,8 +47,17 @@ function mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
 
     ηk_over_ηj = η' * (1.0 ./ η)
 
-    Φ = @. 1.0 / sqrt(8.0) / sqrt(1.0 + Wk_over_Wj) * 
-        (1.0 + sqrt(ηk_over_ηj) * (Wj_over_Wk)^(0.25))^2
+    # ηk_over_ηj can go slightly negative -- η is a fitted log(T) polynomial,
+    # not a value with a guaranteed-positive functional form, and can dip
+    # below zero just outside its well-fit range (confirmed directly: a
+    # BFER flame Jacobian assembly, which probes T at ForwardDiff.Dual-
+    # perturbed values around each cell's real temperature, hit
+    # `sqrt(-0.05...)` here). Physically, viscosity is never negative, so
+    # flooring with `positive_rate_argument` (same convention used for the
+    # same reason throughout ReorderedKinetics.jl) treats a spurious
+    # negative fit value as vanishingly small rather than crashing.
+    Φ = @. 1.0 / sqrt(8.0) / sqrt(1.0 + Wk_over_Wj) *
+        (1.0 + sqrt(positive_rate_argument(ηk_over_ηj)) * (Wj_over_Wk)^(0.25))^2
 
     η_mix = sum((X .* η') ./ (Φ * X))
 
@@ -91,8 +100,17 @@ function viscosity(gas::A, T, X) where {A <: Arrhenius.Solution}
 
     ηk_over_ηj = η' * (1.0 ./ η)
 
-    Φ = @. 1.0 / sqrt(8.0) / sqrt(1.0 + Wk_over_Wj) * 
-        (1.0 + sqrt(ηk_over_ηj) * (Wj_over_Wk)^(0.25))^2
+    # ηk_over_ηj can go slightly negative -- η is a fitted log(T) polynomial,
+    # not a value with a guaranteed-positive functional form, and can dip
+    # below zero just outside its well-fit range (confirmed directly: a
+    # BFER flame Jacobian assembly, which probes T at ForwardDiff.Dual-
+    # perturbed values around each cell's real temperature, hit
+    # `sqrt(-0.05...)` here). Physically, viscosity is never negative, so
+    # flooring with `positive_rate_argument` (same convention used for the
+    # same reason throughout ReorderedKinetics.jl) treats a spurious
+    # negative fit value as vanishingly small rather than crashing.
+    Φ = @. 1.0 / sqrt(8.0) / sqrt(1.0 + Wk_over_Wj) *
+        (1.0 + sqrt(positive_rate_argument(ηk_over_ηj)) * (Wj_over_Wk)^(0.25))^2
 
     return sum((X .* η') ./ (Φ * X))
 end

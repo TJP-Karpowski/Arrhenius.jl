@@ -21,6 +21,12 @@ function PackedKinetics(reactions::ReorderedKinetics)
         PackedSparseColumns(reactions.efficiency_coeffs_fO),
         copy(reactions.Arrhenius_0),
         copy(reactions.troe),
+        copy(reactions.pressure_dependent_pressures),
+        copy(reactions.pressure_dependent_arrhenius),
+        copy(reactions.pressure_dependent_ptr),
+        copy(reactions.index_pressure_dependent),
+        copy(reactions.pressure_dependent_is_linear_burke),
+        copy(reactions.linear_burke_efficiencies),
         reactions.index_rev_start,
         reactions.index_three_body_start,
         reactions.index_fallOff_start,
@@ -28,11 +34,44 @@ function PackedKinetics(reactions::ReorderedKinetics)
     )
 end
 
+function pressure_dependent_rates!(kf, reactions::PackedKinetics, C, T, logT, rec_RcalT)
+    isempty(reactions.index_pressure_dependent) && return nothing
+    for (i, reaction_index) in enumerate(reactions.index_pressure_dependent)
+        first = reactions.pressure_dependent_ptr[i]
+        last = reactions.pressure_dependent_ptr[i + 1] - 1
+        pressure_atm = effective_pressure_atm(reactions, C, T, logT, rec_RcalT, i)
+        @inbounds kf[reaction_index] = pressure_dependent_rate(
+            reactions.pressure_dependent_pressures,
+            reactions.pressure_dependent_arrhenius,
+            first,
+            last,
+            pressure_atm,
+            logT,
+            rec_RcalT,
+        )
+    end
+    return nothing
+end
+
+"""
+    k_Pi_C_rectantOrder!(kf, C, reactant_orders::PackedSparseColumns, first_col, last_col, offset)
+
+Same fix as `ReorderedKinetics.jl`'s sibling function -- see its
+docstring: `positive_rate_argument`-floor `C[i]` before a non-integer
+reactant-order exponentiation, since `x^y` for negative `x`/fractional `y`
+throws `DomainError` in Julia (confirmed directly on a BFER 0D
+homogeneous-reactor smoke test). Integer orders are left untouched.
+"""
 function k_Pi_C_rectantOrder!(kf, C, reactant_orders::PackedSparseColumns, first_col::Int, last_col::Int, offset::Int)
     for col in first_col:last_col
         i = col + offset
         for j in reactant_orders.colptr[col]:reactant_orders.colptr[col + 1] - 1
-            @inbounds kf[i] *= C[reactant_orders.rowval[j]]^reactant_orders.nzval[j]
+            @inbounds begin
+                order = reactant_orders.nzval[j]
+                Ci = C[reactant_orders.rowval[j]]
+                base = isinteger(order) ? Ci : positive_rate_argument(Ci)
+                kf[i] *= base^order
+            end
         end
     end
     return nothing
@@ -117,6 +156,7 @@ function wdot_func!(
     n_reactions = size(reactions.arrhenius_coeffs, 1)
 
     arrheniusLaw!(kf, reactions.arrhenius_coeffs, logT, rec_RcalT)
+    pressure_dependent_rates!(kf, reactions, C, T, logT, rec_RcalT)
 
     tB_first = reactions.index_three_body_start
     tB_last = reactions.index_fallOff_start - 1

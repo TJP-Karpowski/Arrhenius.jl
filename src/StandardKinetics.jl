@@ -2,7 +2,7 @@
 function wdot_func(reaction, T, C,s0_R,h_RT)
 
     @inbounds _kf = @. @view(reaction.Arrhenius_coeffs[:, 1]) * exp(
-        @view(reaction.Arrhenius_coeffs[:, 2]) * log(T) -
+        @view(reaction.Arrhenius_coeffs[:, 2]) * safe_log(T) -
         @view(reaction.Arrhenius_coeffs[:, 3]) * (4184.0 / R / T),
     )
 
@@ -12,10 +12,10 @@ function wdot_func(reaction, T, C,s0_R,h_RT)
 
     for (j, i) in enumerate(reaction.index_falloff)
         @inbounds A0, b0, Ea0 = reaction.Arrhenius_0[j, :]
-        @inbounds k0 = A0 * exp(b0 * log(T) - Ea0 * 4184.0 / R / T)
+        @inbounds k0 = A0 * exp(b0 * safe_log(T) - Ea0 * 4184.0 / R / T)
         @inbounds Pr =
-            k0 * dot(@view(reaction.efficiencies_coeffs[:, i]), C) / _kf[i]
-        lPr = log10(Pr)
+            positive_rate_argument(k0 * dot(@view(reaction.efficiencies_coeffs[:, i]), C) / _kf[i])
+        lPr = safe_log10(Pr)
         _kf[i] *= (Pr / (1 + Pr))
 
         # reference:
@@ -27,7 +27,7 @@ function wdot_func(reaction, T, C,s0_R,h_RT)
                 reaction.Troe_[k, 1] * exp(-T / reaction.Troe_[k, 2]) +
                 exp(-reaction.Troe_[k, 3] / T)
 
-            lF_cent = log10(F_cent)
+            lF_cent = safe_log10(F_cent)
             _C = -0.4 - 0.67 * lF_cent
             N = 0.75 - 1.27 * lF_cent
             @inbounds f1 = (lPr + _C) / (N - 0.14 * (lPr + _C))
@@ -38,7 +38,7 @@ function wdot_func(reaction, T, C,s0_R,h_RT)
     @inbounds ΔS_R = reaction.vk' * s0_R
     @inbounds ΔH_RT = reaction.vk' * h_RT
     @inbounds Keq =
-        @. exp(ΔS_R - ΔH_RT + log(one_atm / R / T) * reaction.vk_sum)
+        @. exp(ΔS_R - ΔH_RT + safe_log(one_atm / R / T) * reaction.vk_sum)
     @inbounds _kr = @. _kf / Keq * reaction.is_reversible
 
     for i = 1:reaction.n_reactions
