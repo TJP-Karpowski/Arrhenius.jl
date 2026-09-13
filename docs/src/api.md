@@ -20,10 +20,92 @@ Docstrings for Arrhenius.jl interface members can be [accessed through Julia's b
 :get_cv
 :mix_trans
 :one_atm
-:set_states
 :species_index
 :wdot_func
+:GasState
+:EquilibriumResult
+:EquilibriumWorkspace
+:set_TPX!
+:set_TPY!
+:set_TP!
+:temperature
+:pressure
+:mole_fractions
+:mass_fractions
+:concentrations
+:density
+:mean_molecular_weight
+:species_cp_mole
+:species_cp_mass
+:cp_mole
+:cp_mass
+:species_enthalpies_mole
+:species_enthalpies_mass
+:enthalpy_mole
+:enthalpy_mass
+:species_internal_energies_mole
+:species_internal_energies_mass
+:internal_energy_mole
+:internal_energy_mass
+:species_entropies_mole
+:species_entropies_mass
+:entropy_mole
+:entropy_mass
+:species_gibbs_mole
+:species_gibbs_mass
+:gibbs_mole
+:gibbs_mass
+:equilibrate!
+:equilibrate
+:equilibrium_composition
+:net_production_rates!
+:net_production_rates
+:BatchedIdealGasReactor
+:NoPdepPackedBatchedMechanism
+:batched_isobaric_rhs!
 ```
+
+## Batched Reactor RHS
+
+`BatchedIdealGasReactor(gas, n)` evaluates many independent isobaric reactor RHS
+states in a structure-of-arrays layout. Species arrays use shape
+`(n_species, n_reactors)` and temperature/pressure arrays use shape
+`(n_reactors,)`.
+
+```julia
+batch = BatchedIdealGasReactor(gas, n)
+batched_isobaric_rhs!(dYdt, dTdt, batch, Y, T, p)
+```
+
+If KernelAbstractions and a backend package such as Metal are loaded, the
+experimental extension can execute selected batched RHS kernels on device
+arrays. Metal currently requires `Float32` arrays. The validated Metal smoke
+path covers simple Arrhenius/reversible mechanisms through
+`BatchedIdealGasReactor`. Mechanisms with third-body, falloff, and Troe tables
+can use the packed no-pressure-dependent mechanism wrapper to stay under Apple
+GPU argument-buffer limits. Pressure-dependent rate tables still need a packed
+device path.
+
+```julia
+using KernelAbstractions, Metal
+
+batch = BatchedIdealGasReactor(gas, n; array = Metal.MtlArray, real_type = Float32)
+Y_d = Metal.MtlArray(Float32.(Y))
+T_d = Metal.MtlArray(Float32.(T))
+p_d = Metal.MtlArray(Float32.(p))
+dYdt_d = similar(Y_d)
+dTdt_d = similar(T_d)
+
+batched_isobaric_rhs!(dYdt_d, dTdt_d, batch, Y_d, T_d, p_d, Metal.MetalBackend())
+```
+
+For h2o2-style mechanisms without pressure-dependent rate tables:
+
+```julia
+packed = NoPdepPackedBatchedMechanism(gas, n; array = Metal.MtlArray, real_type = Float32)
+batched_isobaric_rhs!(dYdt_d, dTdt_d, packed, Y_d, T_d, p_d, Metal.MetalBackend())
+```
+
 ## Thermo Interface API
 
 The thermo functions can be called with the following functions.

@@ -1,31 +1,40 @@
 # [Arrhenius.jl](https://github.com/DENG-MIT/Arrhenius.jl)
-*Reacting Flow and Combustion Modeling Software 2.0.*
+*Julia-native ideal-gas chemical kinetics and reactor kernels.*
 
 ![logo.png](https://user-images.githubusercontent.com/8445647/118408755-e0cd6f80-b654-11eb-8c36-80188e4703ce.png)
 
-**Package Features**
+## Current capabilities
 
-`Arrhenius.jl` is designed with following in mind:
+Arrhenius.jl currently provides:
 
-* [Combustion software 2.0](https://www.linkedin.com/pulse/arrheniusjl-combustion-software-20-weiqi-ji/)
-* [Differential programing](https://github.com/Cantera/enhancements/issues/82)
-* [Physics informed machine learning](https://github.com/Cantera/enhancements/issues/82)
-* Combustion simulation education.
+- Cantera-style YAML parsing for tested ideal-gas mechanisms
+- NASA-polynomial thermodynamics and a mutable `GasState` interface
+- CPU reaction rates and homogeneous isobaric reactor RHS functions
+- single-phase ideal-gas TP and HP equilibrium
+- analytical and mechanism-specialized Jacobian workspaces
+- batched CPU RHS evaluation and an experimental Metal extension
+
+The equilibrium suite compares full H2-air and CH4-air compositions with
+Cantera 3.2 over equivalence ratios 0.5--2.0 and pressures 0.1--100 bar. See
+[Ideal-gas Equilibrium](@ref) and [Mechanism Support](@ref) for the precise
+validated boundary. Arrhenius does not currently provide multiphase or flame
+solvers and does not claim general Cantera API parity.
 
 ## Outline
 
-Documentation comes in following forms:
+The documentation is organized as:
 
 1. How-to examples
-1. Explanatory guide
-3. Reference docstrings for the entire interface are avaliable in the API Documentation section.
+2. Explanatory guide
+3. Reference docstrings for the public interface are available in the API documentation section.
 
-> For developers, when updating these documents, make sure this is synced with docs/make.jl !!
+Developers should keep this page's section lists synchronized with
+`docs/make.jl`.
 
-## Baiscs
+## Basics
 
 ```@contents
-Pages = ["install.md", "get_started.md", "concepts.md"]
+Pages = ["install.md", "get_started.md", "equilibrium.md", "examples.md", "concepts.md"]
 ```
 
 ## Tutorials
@@ -37,5 +46,5 @@ Pages = ["tutorial.md"]
 ## Reference
 
 ```@contents
-Pages = ["faq.md", "api.md"]
+Pages = ["open_source_roadmap.md", "solver_support.md", "mechanism_support.md", "jacobian_performance_plan.md", "faq.md", "api.md"]
 ```

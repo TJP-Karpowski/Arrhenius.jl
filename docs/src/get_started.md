@@ -1,63 +1,131 @@
 # Get Started
 
-## Basics
+## Work with a gas state
 
-We first have to make Arrhenius.jl available in our code (along with other packages you might use):
+Most users should begin with `GasState`. It keeps temperature, pressure,
+composition, and derived thermodynamic quantities consistent, so you do not
+need to perform ideal-gas conversions manually.
+
+From the repository root:
+
 ```julia
 using Arrhenius
-```
-The next step is to create the solution structure similar to Cantera by providing a YAML file as the input. The complete definition of the solution structure can be found [here](https://github.com/DENG-MIT/Arrhenius.jl/blob/a6e77fa501f8e1bfb0b4bd244b507f0bc10f1f8c/src/DataStructure.jl#L29). 
-```julia
-gas = CreateSolution("../../mechanism/JP10skeletal.yaml")
 
+gas = CreateSolution("mechanism/gri30.yaml")
+state = GasState(gas;
+    T = 1000.0,
+    p = one_atm,
+    X = "CH4:1,O2:2,N2:7.52",
+)
 ```
-Note that you have to provide the appropriate location of the YAML file. Here we have in the ```../mechanism``` folder. You can find the number of species and reactions in the mechanism you provided using: 
-```julia
 
-ns = gas.n_species
-nr = gas.n_reactions
+The composition can be a `species:amount` string, a dictionary, a collection
+of pairs, or a vector in mechanism species order. Amounts supplied through
+`X` or `set_TPX!` are normalized as mole fractions.
 
-```
-To view the species that your mechanism uses:
+### Inspect the state
+
 ```julia
-species_arr = gas.species_names
+T = temperature(state)
+p = pressure(state)
+X = mole_fractions(state)
+Y = mass_fractions(state)
+C = concentrations(state)
+
+rho = density(state)
+mw = mean_molecular_weight(state)
+cp = cp_mass(state)
+h = enthalpy_mass(state)
+s = entropy_mass(state)
+g = gibbs_mass(state)
 ```
-You might also want to access a particular species' data. For instance, N2's index can be accessed using: 
+
+Species properties are available separately when needed:
+
 ```julia
-index_N2 = species_index(gas,"N2")
+cp_species = species_cp_mole(state)
+h_species = species_enthalpies_mole(state)
 ```
-To get the molecular weights of each gas: 
+
+Use `species_index` to map a name to mechanism order:
+
 ```julia
-mol_wt_arr = gas.MW
+co2 = species_index(gas, "CO2")
+X_co2 = mole_fractions(state)[co2]
 ```
-Hence the mean molecular weight can be obtained as: 
+
+### Change the state
+
+Use `set_TPX!` for mole-based input and `set_TPY!` for mass-based input:
+
 ```julia
-mean_MW = 1. / dot(Y, 1 ./ gas.MW)
-#get the density using the ideal gas law
-ρ_mass = P / R / T * mean_MW
+set_TPX!(state, 1200.0, 2one_atm, Dict("H2" => 2, "O2" => 1, "N2" => 3.76))
+set_TPY!(state, 1200.0, 2one_atm, Dict("H2" => 0.05, "O2" => 0.22, "N2" => 0.73))
 ```
-Note that one has to include ```using LinearAlgebra``` in the code to be able to use ```dot()```. One can easily convert between the mass and molar fractions:
+
+`set_TP!` changes temperature and pressure while retaining composition.
+
+### Chemistry and equilibrium
+
+Evaluate molar production rates at the current state:
+
 ```julia
+wdot = net_production_rates(state)
+```
+
+Equilibrate in place at fixed temperature and pressure:
+
+```julia
+set_TPX!(state, 2500.0, one_atm, "CH4:1,O2:2,N2:7.52")
+result = equilibrate!(state, :TP)
+```
+
+For an adiabatic, fixed-pressure equilibrium calculation, use `:HP`:
+
+```julia
+set_TPX!(state, 300.0, one_atm, "CH4:1,O2:2,N2:7.52")
+result = equilibrate!(state, :HP)
+adiabatic_temperature = temperature(state)
+```
+
+See [Ideal-gas Equilibrium](@ref) for parameter sweeps, workspaces, validated
+ranges, and limitations.
+
+## Mechanism information
+
+`Solution` stores the parsed mechanism and can be inspected directly:
+
+```julia
+gas.n_species
+gas.n_reactions
+gas.species_names
+gas.MW
+```
+
+Arrhenius parses tested ideal-gas phases from Cantera-style YAML, including
+NASA thermo, reaction-rate data, and mixture-averaged transport input. A file
+with multiple phases can be selected using the `phase` keyword.
+
+## Low-level array API
+
+The array functions are useful when implementing custom kernels or coupling
+Arrhenius to an existing solver. New users generally do not need them.
+
+Given normalized mass fractions `Y`, temperature `T`, and pressure `P`:
+
+```julia
+using LinearAlgebra
+
+mean_MW = inv(dot(Y, inv.(gas.MW)))
+rho = P / (R * T) * mean_MW
 X = Y2X(gas, Y, mean_MW)
-C = Y2C(gas, Y, ρ_mass)
-```
-Some other commonly used thermodynamic functions are given below: 
-```julia
-#molar specific heats
-cp_mole, cp_mass = get_cp(gas, T, X, mean_MW)
-#molar enthalpies
-h_mole = get_H(gas, T, Y, X)
-#entropy
-S0 = get_S(gas, T, P, X)
-```
-One of the core functionalities of the Arrhenius.jl is its ability to compute the source term that frequently appears in the governing equations of chemical systems. One can simply compute this using : 
-```julia
-w_dot = wdot_func(gas.reaction, T, C, S0, h_mole)
+C = Y2C(gas, Y, rho)
 ```
 
-## Input Files
+Low-level thermo and production-rate functions require the caller to keep all
+arrays, units, and cached properties consistent. Prefer `GasState` unless that
+control is specifically required. Reactor users should normally use
+`isobaricReactor(gas)` rather than reconstructing its RHS manually.
 
-Similar to Chemkin and Canetra, all calculations in Arrhenius.jl require an input file to describe the properties of the relevant phase(s) of mixture. We adopt the `YAML` format maintained in the Cantera community.
-
-Arrhenius.jl parses thermodynamic, kinetic, and mixture-averaged transport data
-directly from Cantera-style YAML files.
+Only single-phase ideal-gas TP and HP equilibrium are supported. Multiphase,
+surface, fixed-volume, UV, and SV equilibrium are not implemented.

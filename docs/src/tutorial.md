@@ -1,247 +1,135 @@
-# Tutorial
+# Tutorials
 
-## Pyrolysis of Jet Fuel
+These tutorials use the current state and reactor APIs. Paths assume Julia is
+started from the repository root.
 
-Let us compute the evolution of the mass fractions of C10H16 species as JP-10 is subjected to isobaric pyrolysis at 1 atm and an initial temperature of 1200K. We first include all our packages: 
-```julia
-using Arrhenius
-using LinearAlgebra
-using DifferentialEquations
-using ForwardDiff
-using DiffEqSensitivity
-using Plots
-using DelimitedFiles
-using Profile
-```
-Then create the gas object: 
-```julia
-gas = CreateSolution("../../mechanism/JP10skeletal.yaml")
-```
-Declare the initial conditions as arrays: 
-```julia
-Y0 = zeros(ns)
-Y0[species_index(gas, "C10H16")] = 0.05
-Y0[species_index(gas, "N2")] = 0.95
-T0 = 1200.0   #K
-P = one_atm
-u0 = vcat(Y0, T0);
-```
-Create a function to define the ODE problem (for more details on solving differential equations refer to [DifferentialEquations.jl](https://diffeq.sciml.ai/stable/). 
-```julia
-@inbounds function dudt!(du, u, p, t)
-    T = u[end]
-    Y = @view(u[1:ns])
-    mean_MW = 1. / dot(Y, 1 ./ gas.MW)
-    ρ_mass = P / R / T * mean_MW
-    X = Y2X(gas, Y, mean_MW)
-    C = Y2C(gas, Y, ρ_mass)
-    cp_mole, cp_mass = get_cp(gas, T, X, mean_MW)
-    h_mole = get_H(gas, T, Y, X)
-    S0 = get_S(gas, T, P, X)
-    wdot = wdot_func(gas.reaction, T, C, S0, h_mole)
-    Ydot = wdot / ρ_mass .* gas.MW
-    Tdot = -dot(h_mole, wdot) / ρ_mass / cp_mass
-    du .= vcat(Ydot, Tdot)
-end
-```
-Solve the ODE problem: 
-```julia
-tspan = [0.0, 0.07];
-prob = ODEProblem(dudt!, u0, tspan);
-sol = solve(prob, TRBDF2(), reltol=1e-6, abstol=1e-9);
-```
-Great! Let us now compare our solution with cantera by first loading the cantera data: 
-```julia
-cantera_data = readdlm("pyrolysis.dat")
-ct_ts= cantera_data[:, 1]
-ct_T = cantera_data[:, 2]
-ct_Y = cantera_data[:, 3:end];
-```
-Now plot and compare away: 
-```julia
-plt = plot(sol.t, sol[species_index(gas, "C10H16"), :], lw=2, label="Arrhenius.jl");
-plot!(plt, ct_ts, ct_Y[:, species_index(gas, "C10H16")], label="Cantera")
-ylabel!(plt, "Mass Fraction of C10H16")
-xlabel!(plt, "Time [s]")
-pltT = plot(sol.t, sol[end, :], lw=2, label="Arrhenius.jl");
-plot!(pltT, ct_ts, ct_T, label="Cantera")
-ylabel!(pltT, "Temperature [K]")
-xlabel!(pltT, "Time [s]")
-title!(plt, "JP10 pyrolysis @1200K/1atm")
-pltsum = plot(plt, pltT, legend=true, framestyle=:box)
-```
-You should get a plot something like this: 
+## Thermodynamic state workflow
 
-![JP10](./figures/JP10.png)
-
-
-## Adjoint (Sensitivity) Analysis
-
-In the previous example, we can easily perform a sensitivity analysis using Julia's [```DiffEqSensitivity.jl```](https://diffeq.sciml.ai/latest/analysis/sensitivity/):
-
-```julia
-sensealg = ForwardDiffSensitivity()
-alg = TRBDF2()
-function fsol(u0)
-    sol = solve(prob, u0=u0, alg, tspan = (0.0, 7.e-2),
-                reltol=1e-3, abstol=1e-6, sensealg=sensealg)
-    return sol[end, end]
-end
-u0[end] = 1200.0 + rand()
-println("timing ode solver ...")
-@time fsol(u0)
-@time fsol(u0)
-@time ForwardDiff.gradient(fsol, u0)
-```
-The results are quite promising, with sensitivity computed in less than 2 seconds! 
-```julia
-julia>timing ode solver ...
-0.405083 seconds (614.32 k allocations: 45.126 MiB)
-0.036229 seconds (16.72 k allocations: 11.618 MiB)
-1.517267 seconds (183.25 k allocations: 864.085 MiB, 7.46% gc time)
-```
-
-## Compute Jacobian using Auto-Diff
-
-Julia's automatic differentiation packages like [```ForwardDiff.jl```](https://juliadiff.org/ForwardDiff.jl/stable/user/api/) can be exploited thoroughly using Arrhenius.jl to compute the Jacobian that frequently pops up while integrating stiff systems in chemically reactive flows. We present to you an example using the LiDryer 9-species H2 combustion mechanism. So let's import packages:
+Create a mechanism and initialize methane-air directly in mole amounts:
 
 ```julia
 using Arrhenius
-using LinearAlgebra
-using DifferentialEquations
-using ForwardDiff
-using DiffEqSensitivity
-using Plots
-using DelimitedFiles
-using Profile
+
+gas = CreateSolution("mechanism/gri30.yaml")
+state = GasState(gas;
+    T = 1000.0,
+    p = 15one_atm,
+    X = "CH4:1,O2:2,N2:7.52",
+)
+
+println("density = ", density(state), " kg/m^3")
+println("cp = ", cp_mass(state), " J/(kg K)")
+println("CH4 production rate = ",
+    net_production_rates(state)[species_index(gas, "CH4")])
 ```
-Next input the YAML:
+
+All state setters refresh cached mole fractions, mass fractions,
+concentrations, density, and thermodynamic properties together.
+
+## Adiabatic flame-temperature sweep
+
+An adiabatic flame temperature is the HP equilibrium temperature of the inlet
+mixture. The runnable
+`examples/adiabatic_flame_temperature.jl` example evaluates methane-air over
+`phi = 0.5:0.1:2.0` at 1, 10, and 30 bar.
+
 ```julia
-gas = CreateSolution(".../../mechanism/LiDryer.yaml")
-```
-We use a 9-species + 24-reaction model:
-```julia
-julia> ns = gas.n_species
-9
-julia> ns = gas.n_species
-24
-```
-View the participating species:
-```julia
-julia> gas.species_names
-9-element Array{String,1}:
- "H2"
- "O2"
- "N2"
- "H"
- "O"
- "OH"
- "HO2"
- "H2O2"
- "H2O"
-```
-Let's set the initial conditions: 
-```julia 
-Y0 = zeros(ns)
-Y0[species_index(gas, "H2")] = 0.055463
-Y0[species_index(gas, "O2")] = 0.22008
-Y0[species_index(gas, "N2")] = 0.724457  #to sum as unity
-T0 = 1100.0   #K
-P = one_atm * 10.0
-u0 = vcat(Y0, T0);
-```
-Create the differential function:
-```julia
-function dudt(u)
-    T = u[end]
-    Y = @view(u[1:ns])
-    mean_MW = 1. / dot(Y, 1 ./ gas.MW)
-    ρ_mass = P / R / T * mean_MW
-    X = Y2X(gas, Y, mean_MW)
-    C = Y2C(gas, Y, ρ_mass)
-    cp_mole, cp_mass = get_cp(gas, T, X, mean_MW)
-    h_mole = get_H(gas, T, Y, X)
-    S0 = get_S(gas, T, P, X)
-    wdot = wdot_func(gas.reaction, T, C, S0, h_mole)
-    Ydot = wdot / ρ_mass .* gas.MW
-    Tdot = -dot(h_mole, wdot) / ρ_mass / cp_mass
-    du = vcat(Ydot, Tdot)
+gas = CreateSolution("mechanism/gri30.yaml")
+state = GasState(gas)
+workspace = EquilibriumWorkspace(gas)
+
+phis = collect(0.5:0.1:2.0)
+pressures_bar = [1.0, 10.0, 30.0]
+Tad = zeros(length(phis), length(pressures_bar))
+
+for (j, pressure_bar) in pairs(pressures_bar)
+    for (i, phi) in pairs(phis)
+        set_TPX!(state, 300.0, pressure_bar * 1e5,
+            "CH4:$(phi),O2:2,N2:7.52")
+        equilibrate!(state, workspace, :HP)
+        Tad[i, j] = temperature(state)
+    end
 end
 ```
-Now computing the jacobian w/ref to the initial condition vector is as simple as: 
-```julia
-julia> @time du0 = ForwardDiff.jacobian(dudt, u0)
- 0.026856 seconds (18.37 k allocations: 1.047 MiB)
-10×10 Array{Float64,2}:
-  -0.00227393    -0.000934232   0.000137514  …   0.000213839  -5.21262e-6
-  -0.0360919     -0.0148282     0.00218263       0.00334244   -8.27348e-5
-   0.0            0.0           0.0              0.0           0.0
-   0.00113697     0.000467116  -6.87571e-5      -0.000106919   2.60631e-6
-   2.09985e-12    2.28459e-12  -1.26987e-13      2.97389e-12   2.53222e-14
-   0.0            0.0           0.0          …   2.74378e-5    0.0
-   0.0372289      0.0152953    -0.00225138      -0.00344774    8.53411e-5
-   0.0            0.0           0.0              0.0           0.0
-   0.0            0.0           0.0             -2.9064e-5     0.0
- -27.3692       -47.4374       16.5061          29.0894       -0.306451
-```
 
-## Auto-ignition
+The workspace is scratch storage for repeated equilibrium calculations with
+one mechanism. It does not represent another gas and does not change the
+mathematical result. This loop is sequential; it is unrelated to the batched
+reactor RHS API.
 
-Here we use the GRI30 methane combustion mechanism to compute the ignition delay time of a premixed methane-air mixture @ 980K/15 atm. The implementation is quite similar. Let's say you want to set ICs in-terms of the mole-fractions, one may eventually convert them to mass-fractions as follows:
+## Constant-pressure ignition
+
+For time integration, build the initial mass fractions with `GasState`, then
+use the package reactor RHS. `OrdinaryDiffEq` and `Sundials` are test/example
+dependencies rather than core Arrhenius dependencies.
 
 ```julia
-X0 = zeros(ns);
-X0[species_index(gas, "CH4")] = 1.0 / 2.0
-X0[species_index(gas, "O2")] = 1.0
-X0[species_index(gas, "N2")] = 3.76
-X0 = X0 ./ sum(X0);
-Y0 = X2Y(gas, X0, dot(X0, gas.MW));
+using OrdinaryDiffEq
+using Sundials
+
+gas = CreateSolution("mechanism/gri30.yaml")
+initial = GasState(gas;
+    T = 980.0,
+    p = 15one_atm,
+    X = "CH4:1,O2:2,N2:7.52",
+)
+
+u0 = vcat(mass_fractions(initial), temperature(initial))
+rhs = isobaricReactor(gas)
+problem = ODEProblem(rhs, u0, (0.0, 0.1), (pressure(initial),))
+solution = solve(problem, CVODE_BDF();
+    reltol = 1e-6,
+    abstol = 1e-9,
+    save_everystep = false,
+)
+
+final_temperature = solution.u[end][end]
 ```
-The integrator function remains the same: 
+
+The reactor state vector is `[Y; T]`, and the parameter tuple contains the
+constant pressure. Check `solution.retcode` before using a result. Solver and
+mechanism combinations should follow [Solver and Mechanism Support](@ref).
+
+## Analytical Jacobian
+
+Stiff native OrdinaryDiffEq solvers can use a generated analytical Jacobian:
+
 ```julia
-u0 = vcat(Y0, T0)
-@inbounds function dudt!(du, u, p, t)
-    T = u[end]
-    Y = @view(u[1:ns])
-    mean_MW = 1.0 / dot(Y, 1 ./ gas.MW)
-    ρ_mass = P / R / T * mean_MW
-    X = Y2X(gas, Y, mean_MW)
-    C = Y2C(gas, Y, ρ_mass)
-    cp_mole, cp_mass = get_cp(gas, T, X, mean_MW)
-    h_mole = get_H(gas, T, Y, X)
-    S0 = get_S(gas, T, P, X)
-    wdot = wdot_func(gas.reaction, T, C, S0, h_mole)
-    Ydot = wdot / ρ_mass .* gas.MW
-    Tdot = -dot(h_mole, wdot) / ρ_mass / cp_mass
-    du .= vcat(Ydot, Tdot)
-end
+using ADTypes
+
+jacobian = GeneratedAnalyticalIsobaricJacobianWorkspace(gas)
+ode_function = ODEFunction(rhs; jac = jacobian)
+problem = ODEProblem(ode_function, u0, (0.0, 0.1), (pressure(initial),))
+
+solution = solve(problem, Rodas5P(autodiff=AutoFiniteDiff());
+    reltol = 1e-6,
+    abstol = 1e-9,
+    isoutofdomain = (u, p, t) -> u[end] <= 0 || any(x -> x < -1e-14, @view(u[1:end-1])),
+)
 ```
-We then integrate using DifferentialEquations.jl
+
+The generated workspace selects a mechanism-specialized implementation where
+appropriate and falls back to the schedule-based analytical kernel for large
+pressure-dependent mechanisms.
+
+## Batched reactor right-hand sides
+
+`BatchedIdealGasReactor` evaluates derivatives for many independent reactor
+states. It does not integrate them and is not needed for equilibrium sweeps.
+Use it when a workload already stores species as
+`(n_species, n_reactors)` arrays:
+
 ```julia
-tspan = [0.0, 0.1];
-prob = ODEProblem(dudt!, u0, tspan);
-@time sol = solve(prob, CVODE_BDF(), reltol = 1e-6, abstol = 1e-9)
+batch = BatchedIdealGasReactor(gas, n_reactors)
+batched_isobaric_rhs!(dYdt, dTdt, batch, Y, T, p)
 ```
-After running [ignition.jl](https://github.com/DENG-MIT/Arrhenius.jl/blob/main/example/ignition/ignition.jl) you should get a plot as follows: \
 
-![plot](./figures/ignition.png)
+See [Examples](@ref) for the complete CPU example and experimental Metal path.
 
-## Global Sensitivity Analysis of Ignition Delay
+## Low-level customization
 
-Coming soon.
-
-## Global Sensitivity Analysis of Flame Speed
-
-Coming soon.
-
-## Perfect Stirred Reactor
-
-One may refer to the [NN-PSR repo](https://github.com/DENG-MIT/NN-PSR)
-
-## Computational Diagnostic
-
-Coming soon.
-
-### CEMA
-
-### CSP
+The conversion, thermodynamic, and reaction-rate array functions remain
+available for custom numerical kernels. They require manual consistency of
+temperature, pressure, composition, density, and units. Start with `GasState`
+and `isobaricReactor`; descend to low-level functions only when an application
+needs direct buffer control.
