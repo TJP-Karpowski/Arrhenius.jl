@@ -48,6 +48,7 @@ function initial_mass_fractions(name, gas)
 end
 
 function sample!(f; samples::Int, evals::Int)
+    f()
     times_ns = Vector{Int64}(undef, samples)
     allocations = Vector{Int64}(undef, samples)
     for i in 1:samples
@@ -86,9 +87,15 @@ function benchmark_case(name, mechanism; samples::Int, evals::Int)
     u = vcat(Y, DEFAULT_TEMPERATURE)
     du = similar(u)
     state = isobaricReactor(gas)
+    generated_state = GeneratedIsobaricReactor(gas)
     pressure = DEFAULT_PRESSURE
     updateReactor!(state, Y, DEFAULT_TEMPERATURE, pressure)
     wdot = zeros(gas.n_species)
+    jac_forwarddiff = IsobaricJacobianWorkspace(gas)
+    jac_analytical = AnalyticalIsobaricJacobianWorkspace(gas)
+    jac_generated = GeneratedAnalyticalIsobaricJacobianWorkspace(gas)
+    J_dense = zeros(gas.n_species + 1, gas.n_species + 1)
+    J_sparse = isobaric_jacobian_prototype(gas)
     packed = PackedKinetics(gas.kinetics)
     wdot_packed = zeros(gas.n_species)
     kf_packed = zeros(gas.n_reactions)
@@ -135,6 +142,26 @@ function benchmark_case(name, mechanism; samples::Int, evals::Int)
         packed_wdot_stats...,
     ))
 
+    generated_wdot_stats = sample!(samples=samples, evals=evals) do
+        wdot_func!(
+            wdot,
+            state.kf,
+            state.kr,
+            state.C,
+            state.g_RT,
+            gas.kinetics,
+            jac_generated.kernel,
+            state.T,
+        )
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "wdot_func!_generated",
+        generated_wdot_stats...,
+    ))
+
     rhs_stats = sample!(samples=samples, evals=evals) do
         state(du, u, (pressure,), 0.0)
     end
@@ -144,6 +171,72 @@ function benchmark_case(name, mechanism; samples::Int, evals::Int)
         reactions = gas.n_reactions,
         benchmark = "isobaricReactor_rhs",
         rhs_stats...,
+    ))
+
+    generated_rhs_stats = sample!(samples=samples, evals=evals) do
+        generated_state(du, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "GeneratedIsobaricReactor_rhs",
+        generated_rhs_stats...,
+    ))
+
+    jac_forwarddiff_stats = sample!(samples=samples, evals=evals) do
+        jacobian!(J_dense, jac_forwarddiff, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "jacobian_forwarddiff_dense",
+        jac_forwarddiff_stats...,
+    ))
+
+    jac_analytical_stats = sample!(samples=samples, evals=evals) do
+        jacobian!(J_dense, jac_analytical, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "jacobian_analytical_dense",
+        jac_analytical_stats...,
+    ))
+
+    jac_generated_stats = sample!(samples=samples, evals=evals) do
+        jacobian!(J_dense, jac_generated, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "jacobian_generated_dense",
+        jac_generated_stats...,
+    ))
+
+    jac_analytical_sparse_stats = sample!(samples=samples, evals=evals) do
+        jacobian!(J_sparse, jac_analytical, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "jacobian_analytical_sparse",
+        jac_analytical_sparse_stats...,
+    ))
+
+    jac_generated_sparse_stats = sample!(samples=samples, evals=evals) do
+        jacobian!(J_sparse, jac_generated, u, (pressure,), 0.0)
+    end
+    push!(rows, (
+        mechanism = name,
+        species = gas.n_species,
+        reactions = gas.n_reactions,
+        benchmark = "jacobian_generated_sparse",
+        jac_generated_sparse_stats...,
     ))
 
     return rows
