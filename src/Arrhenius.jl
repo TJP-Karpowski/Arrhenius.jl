@@ -24,4 +24,5 @@ module Arrhenius
     include("ODE_functions.jl")
     include("QSS.jl")
     include("Jacobian.jl")
+    include("BatchedReactor.jl")
 end
