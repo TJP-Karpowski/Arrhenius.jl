@@ -1,4 +1,5 @@
 module Arrhenius
+    using ForwardDiff
     using YAML
     using LinearAlgebra
     using SparseArrays
@@ -21,4 +22,5 @@ module Arrhenius
     include("StandardKinetics.jl")
     include("Transport.jl")
     include("ODE_functions.jl")
+    include("QSS.jl")
 end
