@@ -25,4 +25,5 @@ module Arrhenius
     include("QSS.jl")
     include("Jacobian.jl")
     include("BatchedReactor.jl")
+    include("BatchedReactorTurbo.jl")
 end

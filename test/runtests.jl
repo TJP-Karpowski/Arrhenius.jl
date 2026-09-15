@@ -1,6 +1,7 @@
 using Arrhenius
 using ADTypes
 using LinearAlgebra
+using LoopVectorization
 using OrdinaryDiffEq
 using OrdinaryDiffEqRosenbrock
 using OrdinaryDiffEqSDIRK
@@ -696,6 +697,61 @@ end
             @test dYdt[:, reactor] ≈ du[1:gas.n_species] rtol = 1.0e-12 atol = 1.0e-12
             @test dTdt[reactor] ≈ du[end] rtol = 1.0e-12 atol = 1.0e-12
         end
+    end
+end
+
+@testset "turbo batched isobaric reactor RHS" begin
+    cases = [
+        (
+            mechanism = "h2o2.yaml",
+            compositions = [
+                ("H2" => 2.0, "O2" => 1.0, "AR" => 3.76),
+                ("H2" => 1.0, "O2" => 1.0, "AR" => 2.0),
+                ("H2" => 0.5, "O2" => 1.0, "AR" => 1.0),
+            ],
+            temperatures = [950.0, 1100.0, 1300.0],
+            pressures = [one_atm, 2.0 * one_atm, 0.5 * one_atm],
+        ),
+        (
+            mechanism = "gri30.yaml",
+            compositions = [
+                ("CH4" => 1.0, "O2" => 2.0, "N2" => 7.52),
+                ("CH4" => 0.5, "O2" => 1.0, "N2" => 3.76),
+            ],
+            temperatures = [1200.0, 1500.0],
+            pressures = [one_atm, 10.0 * one_atm],
+        ),
+    ]
+
+    for case in cases
+        gas = CreateSolution(mechanism_path(case.mechanism))
+        n_reactors = length(case.temperatures)
+        Y = zeros(n_reactors, gas.n_species)
+        for reactor in 1:n_reactors
+            Y[reactor, :] .= mass_fractions(gas, case.compositions[reactor])
+        end
+        T = copy(case.temperatures)
+        p = copy(case.pressures)
+        dYdt = similar(Y)
+        dTdt = similar(T)
+        reactor = TurboBatchedIdealGasReactor(gas)
+        buffers = TurboBatchedBuffers(n_reactors, gas.n_species, gas.n_reactions)
+
+        turbo_batched_isobaric_rhs!(dYdt, dTdt, reactor, Y, T, p, buffers)
+
+        state = isobaricReactor(gas)
+        du = zeros(gas.n_species + 1)
+        for reactor_idx in 1:n_reactors
+            u = vcat(Y[reactor_idx, :], T[reactor_idx])
+            state(du, u, (p[reactor_idx],), 0.0)
+            @test dYdt[reactor_idx, :] ≈ du[1:gas.n_species] rtol = 1.0e-8 atol = 1.0e-10
+            @test dTdt[reactor_idx] ≈ du[end] rtol = 1.0e-8 atol = 1.0e-6
+        end
+    end
+
+    @testset "PLOG mechanisms are rejected" begin
+        gas = CreateSolution(mechanism_path("nh3_stagni_2025.yaml"))
+        @test_throws ArgumentError TurboBatchedIdealGasReactor(gas)
     end
 end
 
