@@ -43,6 +43,31 @@ _batch_array(::Type{Array}, x) = x
 _batch_array(array, x) = array(x)
 _batch_real_array(array, x, ::Type{T}) where {T} = _batch_array(array, T.(x))
 
+"""
+    _batch_transposed_packed_sparse_columns(array, A, real_type)
+
+`A` (e.g. `reactions.vk_rev`) is stored row-major-by-reaction /
+column-major-by-species, because that orientation is what `packed_mul_offset!`
+needs for the O(nnz) sparse mat-vec in `PackedKinetics.kr!`. The batched
+per-cell path instead looks up "all species in reaction `r`" one reaction at a
+time (`_sparse_column_dot`), which needs the transposed (species-row,
+reaction-column) layout for O(nnz-per-reaction) access. Without transposing,
+each lookup degenerates into an O(nnz(A)) scan of every column for a row
+match -- O(n_reactions * nnz(A)) total per cell, confirmed ~13-16x slower than
+the scalar `wdot_func!` path for GRI30/NH3-Stagni-sized mechanisms.
+"""
+function _batch_transposed_packed_sparse_columns(array, A::PackedSparseColumns, ::Type{T}) where {T}
+    csc = SparseMatrixCSC{Float64,Int64}(A.nrow, A.ncol, copy(A.colptr), copy(A.rowval), copy(A.nzval))
+    transposed = PackedSparseColumns(sparse(csc'))
+    return PackedSparseColumns(
+        _batch_array(array, copy(transposed.colptr)),
+        _batch_array(array, copy(transposed.rowval)),
+        _batch_real_array(array, transposed.nzval, T),
+        transposed.nrow,
+        transposed.ncol,
+    )
+end
+
 function packed_kinetics_for_batch(reactions::PackedKinetics; array = Array, real_type = Float64)
     return PackedKinetics(
         _batch_real_array(array, reactions.arrhenius_coeffs, real_type),
@@ -74,13 +99,7 @@ function packed_kinetics_for_batch(reactions::PackedKinetics; array = Array, rea
             reactions.vk.nrow,
             reactions.vk.ncol,
         ),
-        PackedSparseColumns(
-            _batch_array(array, copy(reactions.vk_rev.colptr)),
-            _batch_array(array, copy(reactions.vk_rev.rowval)),
-            _batch_real_array(array, reactions.vk_rev.nzval, real_type),
-            reactions.vk_rev.nrow,
-            reactions.vk_rev.ncol,
-        ),
+        _batch_transposed_packed_sparse_columns(array, reactions.vk_rev, real_type),
         _batch_real_array(array, reactions.vk_sum, real_type),
         PackedSparseColumns(
             _batch_array(array, copy(reactions.efficiency_coeffs_tB.colptr)),
@@ -350,15 +369,7 @@ end
 end
 
 @inline function _reverse_delta_g(A::PackedSparseColumns, g_RT, reactor::Int, local_reaction::Int)
-    total = zero(eltype(g_RT))
-    for species in 1:A.ncol
-        for j in A.colptr[species]:A.colptr[species + 1] - 1
-            if A.rowval[j] == local_reaction
-                @inbounds total += A.nzval[j] * g_RT[species, reactor]
-            end
-        end
-    end
-    return total
+    return _sparse_column_dot(A, g_RT, reactor, local_reaction)
 end
 
 function batched_wdot_cell!(batch::BatchedIdealGasReactor, reactor::Int, T,
