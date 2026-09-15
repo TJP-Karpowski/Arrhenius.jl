@@ -574,15 +574,7 @@ function binary_diffusion_1atm(T, MW_i, MW_j, trans_i, trans_j)
 end
 
 function species_cp_R(thermo, T)
-    coeffs = T <= 1000.0 ? thermo.nasa_low : thermo.nasa_high
-    cp_T = (1.0, T, T^2, T^3, T^4)
-    cp_R = zeros(size(coeffs, 1))
-    for i in eachindex(cp_R)
-        for j in 1:5
-            cp_R[i] += coeffs[i, j] * cp_T[j]
-        end
-    end
-    return cp_R
+    return nasa_property(thermo, T, (1, 2, 3, 4, 5), (one(T), T, T^2, T^3, T^4))
 end
 
 function species_conductivity(T, MW, thermo, trans, viscosity)

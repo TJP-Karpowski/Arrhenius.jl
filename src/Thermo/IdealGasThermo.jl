@@ -48,10 +48,35 @@ function IdealGasThermo(yaml::AbstractDict, phase = phase_data(yaml))
     return  IdealGasThermo(nasa_low, nasa_high, Trange, isTcommon)
 end
 
-function selectPoly(thermo::IdealGasThermo, T::Real,range)
-    return (T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
-    #return @inbounds @view(thermo.nasa_high[:,range]) #(T<=1000.0) ? @view(thermo.nasa_low[:,range]) : @view(thermo.nasa_high[:,range])
-    #return IfElse.ifelse(T<=1000.0,thermo.nasa_low[:,1:6],thermo.nasa_high[:,1:6])
+# Evaluate one selected NASA7 interval without blending or matrix temporaries.
+# Branch comparisons work for ForwardDiff Dual temperatures; the selected
+# polynomial remains differentiable away from interval boundaries.
+function nasa_property(thermo::IdealGasThermo, T::Real, columns, terms)
+    result = zeros(promote_type(eltype(thermo.nasa_low), typeof(T)), size(thermo.nasa_low, 1))
+    @inbounds for species in eachindex(result)
+        coefficients = T <= thermo.Trange[species, 2] ? thermo.nasa_low : thermo.nasa_high
+        value = zero(eltype(result))
+        for term in eachindex(terms)
+            value += coefficients[species, columns[term]] * terms[term]
+        end
+        result[species] = value
+    end
+    return result
+end
+
+function selectPoly(thermo::IdealGasThermo, T::Real, range)
+    if thermo.isTcommon
+        coefficients = T <= thermo.Trange[1, 2] ? thermo.nasa_low : thermo.nasa_high
+        return @view coefficients[:, range]
+    end
+    coefficients = similar(thermo.nasa_low)
+    @inbounds for species in axes(coefficients, 1)
+        selected = T <= thermo.Trange[species, 2] ? thermo.nasa_low : thermo.nasa_high
+        for column in axes(coefficients, 2)
+            coefficients[species, column] = selected[species, column]
+        end
+    end
+    return @view coefficients[:, range]
 end
 #@register_symbolic selectPoly(thermo::IdealGasThermo, T::Real,range)
 
@@ -61,18 +86,7 @@ end
 calculates the dimensionless mole based enthalpy (h) for each species
 """
 function cal_h_RT(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
-    H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
-    #poly = selectPoly(thermo,T,1:6)
-    #h_mole = poly * H_T
-
-    h_mole = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,1:6] + (0.5 * tanh(T-1000) + 0.5) * thermo.nasa_high[:,1:6]) * H_T
-    #if !thermo.isTcommon
-    #   ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #   h_mole[ind_correction] .=
-    #       @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
-    #end
-    #H_mole = dot(h_mole, X)
-    return h_mole
+    return nasa_property(thermo, T, (1, 2, 3, 4, 5, 6), (one(T), T/2, T^2/3, T^3/4, T^4/5, one(T)/T))
 end
 
 """
@@ -81,18 +95,7 @@ end
 calculates the dimensionless mole based reference state entropy (s0) for each species
 """
 function cal_s0_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
-    S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
-    #poly = selectPoly(thermo,T,[1, 2, 3, 4, 5, 7])
-    #S0 = poly * S_T 
-
-    S0 = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,[1, 2, 3, 4, 5, 7]] + (0.5 * tanh(T-1000) + 0.5) * thermo.nasa_high[:,[1, 2, 3, 4, 5, 7]]) * S_T
-    #if !thermo.isTcommon
-    #    ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #    S0[ind_correction] .=
-    #        @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
-    #        S_T 
-    #end
-    return S0 
+    return nasa_property(thermo, T, (1, 2, 3, 4, 5, 7), (log(T), T, T^2/2, T^3/3, T^4/4, one(T)))
 end
 export cal_s0_R
 
@@ -139,20 +142,7 @@ calculates the dimensionless mole based heat capacity
 at constant pressure (cp) for each species
 """
 function cal_cp_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
-    cp_T = [1.0, T, T^2, T^3, T^4]
-    #poly = selectPoly(thermo,T,1:5)
-    # cp = poly * cp_T
-
-    cp = ((1-(0.5 * tanh(T-1000) + 0.5)) *  thermo.nasa_low[:,1:5] + (0.5 * tanh(T-1000) + 0.5)  * thermo.nasa_high[:,1:5]) * cp_T
-
-    
-    #TODO: not sure if inplace operation will be an issue for AD
-    #if !thermo.isTcommon
-    #   ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-    #   cp[ind_correction] .=
-    #       @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
-    #end
-    return cp
+    return nasa_property(thermo, T, (1, 2, 3, 4, 5), (one(T), T, T^2, T^3, T^4))
 end
 
 """

@@ -195,14 +195,16 @@ negative `x` is already well-defined and real) keep their exact prior
 behavior unchanged.
 """
 function k_Pi_C_rectantOrder!(kf,C,reactant_orders)
-    for i in eachindex(kf)
+    @inbounds for i in eachindex(kf)
         for j in reactant_orders.colptr[i]:reactant_orders.colptr[i+1]-1
-            @inbounds begin
-                order = reactant_orders.nzval[j]
-                Ci = C[reactant_orders.rowval[j]]
-                base = isinteger(order) ? Ci : positive_rate_argument(Ci)
-                kf[i] *= base^order
-            end
+            order = reactant_orders.nzval[j]
+            Ci = C[reactant_orders.rowval[j]]
+            # Avoid generic floating-point pow for common integral orders.
+            # Fractional orders retain the existing positive-argument floor.
+            power = order == 1 ? Ci : order == 2 ? Ci * Ci :
+                order == 0 ? one(Ci) : order == 3 ? Ci * Ci * Ci :
+                (isinteger(order) ? Ci : positive_rate_argument(Ci))^order
+            kf[i] *= power
         end
     end
 end

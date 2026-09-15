@@ -1127,7 +1127,7 @@ function order_value(orders, species::Int, reaction::Int)
     return sparse_column_value(orders, species, reaction)
 end
 
-function troe_factor_and_derivative(Pr, troe, row::Int, T)
+@inline function troe_factor_and_derivative(Pr, troe, row::Int, T)
     Pr = positive_rate_argument(Pr)
     F_cent =
         (1 - troe[row, 1]) * exp(-T / troe[row, 4]) +
@@ -1145,7 +1145,7 @@ function troe_factor_and_derivative(Pr, troe, row::Int, T)
     return factor, factor * dlog_factor_dPr
 end
 
-function troe_factor_and_temperature_derivative(Pr, dPr_dT, troe, row::Int, T)
+@inline function troe_factor_and_temperature_derivative(Pr, dPr_dT, troe, row::Int, T)
     Pr = positive_rate_argument(Pr)
     exp1 = exp(-T / troe[row, 4])
     exp2 = exp(-T / troe[row, 2])
@@ -1179,7 +1179,7 @@ function troe_factor_and_temperature_derivative(Pr, dPr_dT, troe, row::Int, T)
     return factor, factor * dexponent_dT
 end
 
-function effective_rate_and_derivative(reactions::ReorderedKinetics, k_inf, C, T, logT, rec_RcalT, reaction::Int)
+@inline function effective_rate_and_derivative(reactions::ReorderedKinetics, k_inf, C, T, logT, rec_RcalT, reaction::Int)
     if reaction < reactions.index_three_body_start
         return k_inf, zero(k_inf), 0
     end
@@ -1207,7 +1207,7 @@ function effective_rate_and_derivative(reactions::ReorderedKinetics, k_inf, C, T
     return lindemann, dlindemann_dM, efficiency_col
 end
 
-function effective_rate_and_temperature_derivative(reactions::ReorderedKinetics, k_inf, dk_inf_dT, C, T, logT, rec_RcalT, reaction::Int)
+@inline function effective_rate_and_temperature_derivative(reactions::ReorderedKinetics, k_inf, dk_inf_dT, C, T, logT, rec_RcalT, reaction::Int)
     if reaction < reactions.index_three_body_start
         return k_inf, dk_inf_dT
     end

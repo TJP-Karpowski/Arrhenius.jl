@@ -225,7 +225,17 @@ end
     Helper function to make call easier
 """
 function cal_nasa_poly!(state::isobaricReactor,T,p)
-    cal_nasa_poly!(state.nasa_poly,state.gas.thermo.nasa_low,state.gas.thermo.nasa_high,T,p)
+    thermo = state.gas.thermo
+    if thermo.isTcommon
+        state.nasa_poly .= T <= thermo.Trange[1, 2] ? thermo.nasa_low : thermo.nasa_high
+    else
+        @inbounds for species in axes(state.nasa_poly, 1)
+            coefficients = T <= thermo.Trange[species, 2] ? thermo.nasa_low : thermo.nasa_high
+            for column in axes(state.nasa_poly, 2)
+                state.nasa_poly[species, column] = coefficients[species, column]
+            end
+        end
+    end
     return nothing
 end
 
